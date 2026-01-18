@@ -55,47 +55,47 @@ export default function AdminAttendance() {
       return;
     }
 
-    const existing = getStudentAttendance(studentId);
-    if (existing) {
-      // Update existing
-      await updateAttendance(existing.id, {
-        status,
-        absentReason: status === 'absent' ? reason : undefined
-      });
-    } else {
-      // Create new
-      await addAttendance({
-        classId: selectedClass,
-        studentId,
-        date: selectedDate,
-        status,
-        checkInTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-        checkInMethod: 'manual',
-        absentReason: status === 'absent' ? reason : undefined
-      });
-    }
+    try {
+      const existing = getStudentAttendance(studentId);
+      if (existing) {
+        // Update existing
+        await updateAttendance(existing.id, {
+          status,
+          checkInTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+          absentReason: status === 'absent' ? reason : undefined
+        });
+      } else {
+        // Create new
+        await addAttendance({
+          classId: selectedClass,
+          studentId,
+          date: selectedDate,
+          status,
+          checkInTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+          checkInMethod: 'manual',
+          absentReason: status === 'absent' ? reason : undefined
+        });
+      }
 
-    // 부모에게 알림 전송 (비동기 처리)
-    const student = students.find(s => s.id === studentId);
-    const className = selectedClassData?.name || '';
-    if (student && className) {
-      (async () => {
-        try {
-          const parents = await parentService.getParentsByStudentId(studentId);
+      // 부모에게 알림 전송 (비동기 처리)
+      const student = students.find(s => s.id === studentId);
+      const className = selectedClassData?.name || '';
+      if (student && className) {
+        parentService.getParentsByStudentId(studentId).then(parents => {
           const parentUserIds = parents.map(p => p.userId);
           if (parentUserIds.length > 0) {
-            await notificationService.notifyParentsOfAttendanceChange(
+            notificationService.notifyParentsOfAttendanceChange(
               parentUserIds,
               student.name,
               className,
               status,
               selectedDate
-            );
+            ).catch(err => console.error('Failed to notify parents:', err));
           }
-        } catch (error) {
-          console.error('Failed to notify parents:', error);
-        }
-      })();
+        }).catch(err => console.error('Failed to get parents:', err));
+      }
+    } catch (error) {
+      console.error('Failed to update attendance:', error);
     }
   };
 
