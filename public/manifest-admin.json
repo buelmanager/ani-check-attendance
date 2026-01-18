@@ -1,8 +1,8 @@
 {
-  "name": "ANI CHECK",
-  "short_name": "ANI CHECK",
-  "description": "스마트 출결 관리 시스템",
-  "start_url": "/",
+  "name": "ANI CHECK 관리자",
+  "short_name": "ANI 관리자",
+  "description": "ANI CHECK 관리자용 앱",
+  "start_url": "/admin",
   "display": "standalone",
   "background_color": "#1E3A5F",
   "theme_color": "#1E3A5F",

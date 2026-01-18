@@ -13,6 +13,12 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Parents - authenticated users can write, public read
+    match /parents/{parentId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
     // Attendances - public create for QR check-in, authenticated for update/delete
     match /attendances/{attendanceId} {
       allow read: if true;
@@ -22,6 +28,18 @@ service cloud.firestore {
 
     // QR Sessions - authenticated users can write, public read
     match /qrSessions/{sessionId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Announcements - authenticated users can write, public read
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Notifications - authenticated users can manage their own
+    match /notifications/{notificationId} {
       allow read: if true;
       allow write: if request.auth != null;
     }

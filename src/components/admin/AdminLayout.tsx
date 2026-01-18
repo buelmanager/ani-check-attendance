@@ -75,7 +75,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50 flex pwa-safe-top">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

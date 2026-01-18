@@ -231,13 +231,29 @@ body {
   animation: fadeIn 0.3s ease-out forwards;
 }
 
-/* Safe Areas */
-.safe-top {
+/* Safe Areas for PWA */
+.safe-area-top {
   padding-top: env(safe-area-inset-top, 0);
 }
 
-.safe-bottom {
+.safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* PWA standalone mode padding */
+@media (display-mode: standalone) {
+  .pwa-safe-top {
+    padding-top: max(env(safe-area-inset-top, 0), 20px);
+  }
+}
+
+/* iOS PWA status bar space */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    .pwa-safe-top {
+      padding-top: max(env(safe-area-inset-top, 0), 44px);
+    }
+  }
 }
 
 /* Tab Styles */

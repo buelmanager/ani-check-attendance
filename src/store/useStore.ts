@@ -27,7 +27,7 @@ interface AppState {
   deleteClass: (id: string) => Promise<void>;
 
   // Student operations
-  addStudent: (student: Omit<Student, 'id' | 'createdAt'>) => Promise<void>;
+  addStudent: (student: Omit<Student, 'id' | 'createdAt' | 'inviteCode' | 'parentIds'>) => Promise<void>;
   updateStudent: (id: string, updates: Partial<Student>) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
 

@@ -51,7 +51,8 @@ export default function AdminReports() {
       const present = studentAttendances.filter((a) => a.status === 'present').length;
       const late = studentAttendances.filter((a) => a.status === 'late').length;
       const absent = studentAttendances.filter((a) => a.status === 'absent').length;
-      const rate = total > 0 ? Math.round(((present + late) / total) * 100) : 100;
+      // 출석 기록이 없으면 0%로 표시 (100%가 아님)
+      const rate = total > 0 ? Math.round(((present + late) / total) * 100) : 0;
       return { ...student, total, present, late, absent, rate };
     }).sort((a, b) => b.rate - a.rate);
   }, [students, stats.filteredAttendances]);

@@ -186,7 +186,7 @@ export default function Settings() {
 
         {/* Version */}
         <div className="text-center">
-          <p className="text-gray-400 text-sm">출석마스터 v1.0.0</p>
+          <p className="text-gray-400 text-sm">ANI CHECK v1.0.0</p>
         </div>
       </div>
     </Layout>

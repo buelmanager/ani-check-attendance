@@ -10,7 +10,7 @@ export default function AdminLogin() {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [name, setName] = useState('');
 
-  const { login, register } = useAuth();
+  const { loginAsAdmin, register } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -30,7 +30,7 @@ export default function AdminLogin() {
         }
         await register(email, password, name);
       } else {
-        await login(email, password);
+        await loginAsAdmin(email, password);
       }
       navigate(from, { replace: true });
     } catch (err: unknown) {

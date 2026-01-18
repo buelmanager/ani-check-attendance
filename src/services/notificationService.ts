@@ -1,0 +1,117 @@
+import {
+  collection,
+  doc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
+  where,
+  onSnapshot,
+  serverTimestamp,
+  Timestamp,
+  writeBatch
+} from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import type { Notification } from '../types';
+
+const COLLECTION = 'notifications';
+
+export const notificationService = {
+  // 특정 사용자의 알림 구독
+  subscribeForUser(userId: string, callback: (notifications: Notification[]) => void) {
+    const q = query(
+      collection(db, COLLECTION),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const notifications = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+        createdAt: (doc.data().createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as Notification[];
+      callback(notifications);
+    }, (error) => {
+      console.error('Notifications subscription error:', error);
+    });
+  },
+
+  async getForUser(userId: string): Promise<Notification[]> {
+    const q = query(
+      collection(db, COLLECTION),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    })) as Notification[];
+  },
+
+  async getUnreadCount(userId: string): Promise<number> {
+    const q = query(
+      collection(db, COLLECTION),
+      where('userId', '==', userId),
+      where('isRead', '==', false)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.size;
+  },
+
+  async create(data: Omit<Notification, 'id' | 'createdAt'>): Promise<string> {
+    const docRef = await addDoc(collection(db, COLLECTION), {
+      ...data,
+      createdAt: serverTimestamp()
+    });
+    return docRef.id;
+  },
+
+  async markAsRead(id: string): Promise<void> {
+    await updateDoc(doc(db, COLLECTION, id), {
+      isRead: true
+    });
+  },
+
+  async markAllAsRead(userId: string): Promise<void> {
+    const q = query(
+      collection(db, COLLECTION),
+      where('userId', '==', userId),
+      where('isRead', '==', false)
+    );
+    const snapshot = await getDocs(q);
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { isRead: true });
+    });
+    await batch.commit();
+  },
+
+  async delete(id: string): Promise<void> {
+    await deleteDoc(doc(db, COLLECTION, id));
+  },
+
+  // 부모에게 체크인 알림 생성
+  async notifyParentsOfCheckin(
+    parentUserIds: string[],
+    studentName: string,
+    className: string,
+    status: 'present' | 'late',
+    checkInTime: string
+  ): Promise<void> {
+    const statusText = status === 'present' ? '출석' : '지각';
+
+    for (const userId of parentUserIds) {
+      await this.create({
+        userId,
+        type: 'checkin',
+        title: `${studentName} ${statusText}`,
+        message: `${studentName}님이 ${className} 수업에 ${checkInTime}에 ${statusText}했습니다.`,
+        isRead: false
+      });
+    }
+  }
+};

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attend-master-v1';
+const CACHE_NAME = 'ani-check-v5';
 const urlsToCache = [
   '/',
   '/index.html',
