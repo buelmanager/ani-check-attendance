@@ -40,6 +40,7 @@ import AdminClasses from './pages/admin/AdminClasses';
 import AdminStudents from './pages/admin/AdminStudents';
 import AdminAttendance from './pages/admin/AdminAttendance';
 import AdminReports from './pages/admin/AdminReports';
+import AdminAnnouncements from './pages/admin/AdminAnnouncements';
 import AdminSettings from './pages/admin/AdminSettings';
 
 function AppContent() {
@@ -123,6 +124,11 @@ function AppContent() {
       <Route path="/admin/attendance" element={
         <ProtectedRoute>
           <AdminAttendance />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/announcements" element={
+        <ProtectedRoute>
+          <AdminAnnouncements />
         </ProtectedRoute>
       } />
       <Route path="/admin/reports" element={

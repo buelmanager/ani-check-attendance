@@ -113,5 +113,45 @@ export const notificationService = {
         isRead: false
       });
     }
+  },
+
+  // 부모에게 출석 상태 변경 알림 (결석, 지각, 출석, 공결)
+  async notifyParentsOfAttendanceChange(
+    parentUserIds: string[],
+    studentName: string,
+    className: string,
+    status: 'present' | 'late' | 'absent' | 'excused',
+    date: string
+  ): Promise<void> {
+    const statusTextMap = {
+      present: '출석',
+      late: '지각',
+      absent: '결석',
+      excused: '공결'
+    };
+    const statusText = statusTextMap[status];
+
+    const typeMap: Record<string, 'checkin' | 'late' | 'absent' | 'announcement'> = {
+      present: 'checkin',
+      late: 'late',
+      absent: 'absent',
+      excused: 'checkin'
+    };
+    const notificationType = typeMap[status];
+
+    const formattedDate = new Date(date).toLocaleDateString('ko-KR', {
+      month: 'long',
+      day: 'numeric'
+    });
+
+    for (const userId of parentUserIds) {
+      await this.create({
+        userId,
+        type: notificationType,
+        title: `${studentName} ${statusText} 처리`,
+        message: `${studentName}님이 ${formattedDate} ${className} 수업에 ${statusText} 처리되었습니다.`,
+        isRead: false
+      });
+    }
   }
 };

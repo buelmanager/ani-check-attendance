@@ -4,6 +4,8 @@ import { qrSessionService } from '../services/qrSessionService';
 import { attendanceService } from '../services/attendanceService';
 import { classService } from '../services/classService';
 import { studentService } from '../services/studentService';
+import { parentService } from '../services/parentService';
+import { notificationService } from '../services/notificationService';
 import type { Class, Student } from '../types';
 
 export default function QRCheckin() {
@@ -83,18 +85,45 @@ export default function QRCheckin() {
       const diffMinutes = Math.floor((now.getTime() - classDateTime.getTime()) / 60000);
       const attendanceStatus = diffMinutes > 10 ? 'late' : 'present';
 
+      const checkInTime = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
       // Create attendance record
       await attendanceService.create({
         classId: sessionData.classId,
         studentId: selectedStudent,
         date: sessionData.date,
         status: attendanceStatus,
-        checkInTime: now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+        checkInTime,
         checkInMethod: 'qr'
       });
 
       const student = classStudents.find(s => s.id === selectedStudent);
       setCheckedInStudent(student || null);
+
+      // 부모에게 알림 전송 (비동기로 처리하여 UI 블로킹 방지)
+      if (student && classData) {
+        (async () => {
+          try {
+            // 해당 학생의 부모들 조회
+            const parents = await parentService.getParentsByStudentId(selectedStudent);
+            const parentUserIds = parents.map(p => p.userId);
+
+            if (parentUserIds.length > 0) {
+              // 부모들에게 체크인 알림 생성
+              await notificationService.notifyParentsOfCheckin(
+                parentUserIds,
+                student.name,
+                classData.name,
+                attendanceStatus as 'present' | 'late',
+                checkInTime
+              );
+            }
+          } catch (error) {
+            console.error('Failed to notify parents:', error);
+          }
+        })();
+      }
+
       setStatus('success');
     } catch (error) {
       console.error('Checkin error:', error);

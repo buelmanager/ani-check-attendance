@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ParentLayout } from '../../components/parent/ParentLayout';
@@ -6,18 +6,24 @@ import { studentService } from '../../services/studentService';
 import { classService } from '../../services/classService';
 import { attendanceService } from '../../services/attendanceService';
 import { announcementService } from '../../services/announcementService';
+import { usePushNotification } from '../../hooks/usePushNotification';
 import type { Student, Class, Attendance, Announcement } from '../../types';
 
 export default function ParentDashboard() {
   const navigate = useNavigate();
   const { parentData, logout } = useAuth();
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showPushBanner, setShowPushBanner] = useState(true);
 
   const [children, setChildren] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [todayAttendance, setTodayAttendance] = useState<Attendance[]>([]);
+  const [allAttendances, setAllAttendances] = useState<Attendance[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 푸시 알림 훅
+  const { isSupported, isPermissionGranted, requestPermission } = usePushNotification();
 
   const today = new Date().toISOString().split('T')[0];
   const todayFormatted = new Date().toLocaleDateString('ko-KR', {
@@ -29,16 +35,12 @@ export default function ParentDashboard() {
   useEffect(() => {
     if (!parentData) return;
 
-    // 자녀 정보 로드
+    // 자녀 정보 로드 (Promise.all로 병렬 처리 - async-parallel 규칙)
     const loadChildren = async () => {
-      const childrenData: Student[] = [];
-      for (const studentId of parentData.studentIds) {
-        const student = await studentService.getById(studentId);
-        if (student) {
-          childrenData.push(student);
-        }
-      }
-      setChildren(childrenData);
+      const childrenData = await Promise.all(
+        parentData.studentIds.map(studentId => studentService.getById(studentId))
+      );
+      setChildren(childrenData.filter((student): student is Student => student !== null));
       setIsLoading(false);
     };
 
@@ -61,10 +63,20 @@ export default function ParentDashboard() {
       setAnnouncements(anns.slice(0, 3));
     });
 
+    // 전체 출석 데이터 구독 (출석률 계산용)
+    const unsubAllAttendances = attendanceService.subscribeAll((attendances) => {
+      // 내 자녀 출석만 필터링
+      const childAttendances = attendances.filter(a =>
+        parentData.studentIds.includes(a.studentId)
+      );
+      setAllAttendances(childAttendances);
+    });
+
     return () => {
       unsubClasses();
       unsubAttendance();
       unsubAnnouncements();
+      unsubAllAttendances();
     };
   }, [parentData, today]);
 
@@ -86,10 +98,40 @@ export default function ParentDashboard() {
     return classes.filter(c => c.studentIds.includes(studentId));
   };
 
-  // 이번 달 출석률 계산 (간단 버전)
-  const getMonthlyRate = (_studentId: string) => {
-    // TODO: 실제 계산 로직 구현
-    return Math.floor(Math.random() * 20 + 80); // 임시: 80~100%
+  // 이번 달 출석률 계산
+  const monthlyRates = useMemo(() => {
+    const rates: Record<string, number> = {};
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    for (const child of children) {
+      // 해당 학생의 이번 달 출석 기록
+      const studentAttendances = allAttendances.filter(a => {
+        if (a.studentId !== child.id) return false;
+        const date = new Date(a.date);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      });
+
+      if (studentAttendances.length === 0) {
+        rates[child.id] = 0;
+        continue;
+      }
+
+      // 출석/지각은 출석으로 간주, 결석은 미출석
+      const presentCount = studentAttendances.filter(a =>
+        a.status === 'present' || a.status === 'late' || a.status === 'excused'
+      ).length;
+
+      const rate = Math.round((presentCount / studentAttendances.length) * 100);
+      rates[child.id] = rate;
+    }
+
+    return rates;
+  }, [children, allAttendances]);
+
+  const getMonthlyRate = (studentId: string) => {
+    return monthlyRates[studentId] ?? 0;
   };
 
   // 전체 자녀 출석 통계
@@ -113,9 +155,48 @@ export default function ParentDashboard() {
     );
   }
 
+  // 푸시 알림 권한 요청 핸들러
+  const handleEnablePush = async () => {
+    const granted = await requestPermission();
+    if (granted) {
+      setShowPushBanner(false);
+    }
+  };
+
   return (
     <ParentLayout>
       <div className="px-1">
+        {/* 푸시 알림 권한 요청 배너 */}
+        {isSupported && !isPermissionGranted && showPushBanner && (
+          <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-4 mb-4 relative">
+            <button
+              onClick={() => setShowPushBanner(false)}
+              className="absolute top-2 right-2 p-1 text-white/70 hover:text-white"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-medium text-sm">출석 알림을 받으시겠어요?</p>
+                <p className="text-white/70 text-xs">자녀가 출석하면 실시간으로 알려드려요</p>
+              </div>
+              <button
+                onClick={handleEnablePush}
+                className="px-4 py-2 bg-white text-blue-600 rounded-lg font-medium text-sm hover:bg-blue-50 transition-colors"
+              >
+                허용
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header with Settings */}
         <header className="flex items-center justify-between mb-6">
           <div>

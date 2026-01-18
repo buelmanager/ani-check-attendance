@@ -3,6 +3,8 @@ import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
 import { qrSessionService, QRSession } from '../../services/qrSessionService';
+import { parentService } from '../../services/parentService';
+import { notificationService } from '../../services/notificationService';
 import QRCode from 'qrcode';
 
 const REFRESH_INTERVAL = 600; // 10분(600초)마다 갱신
@@ -71,6 +73,29 @@ export default function AdminAttendance() {
         checkInMethod: 'manual',
         absentReason: status === 'absent' ? reason : undefined
       });
+    }
+
+    // 부모에게 알림 전송 (비동기 처리)
+    const student = students.find(s => s.id === studentId);
+    const className = selectedClassData?.name || '';
+    if (student && className) {
+      (async () => {
+        try {
+          const parents = await parentService.getParentsByStudentId(studentId);
+          const parentUserIds = parents.map(p => p.userId);
+          if (parentUserIds.length > 0) {
+            await notificationService.notifyParentsOfAttendanceChange(
+              parentUserIds,
+              student.name,
+              className,
+              status,
+              selectedDate
+            );
+          }
+        } catch (error) {
+          console.error('Failed to notify parents:', error);
+        }
+      })();
     }
   };
 

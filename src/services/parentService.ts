@@ -99,5 +99,16 @@ export const parentService = {
 
   async delete(id: string): Promise<void> {
     await deleteDoc(doc(db, COLLECTION, id));
+  },
+
+  // 특정 학생의 부모들 가져오기
+  async getParentsByStudentId(studentId: string): Promise<Parent[]> {
+    const q = query(collection(db, COLLECTION), where('studentIds', 'array-contains', studentId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id,
+      studentIds: doc.data().studentIds || []
+    })) as Parent[];
   }
 };
