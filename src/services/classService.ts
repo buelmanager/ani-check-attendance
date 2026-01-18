@@ -60,8 +60,12 @@ export const classService = {
 
   async update(id: string, data: Partial<Class>): Promise<void> {
     const docRef = doc(db, COLLECTION, id);
+    // Filter out undefined values (Firebase doesn't support undefined)
+    const filteredData = Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined)
+    );
     await updateDoc(docRef, {
-      ...data,
+      ...filteredData,
       updatedAt: serverTimestamp()
     });
   },
