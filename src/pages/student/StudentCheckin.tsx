@@ -22,9 +22,6 @@ export default function StudentCheckin() {
   // QR 스캔 후 수업 선택 관련 상태
   const [showClassSelectModal, setShowClassSelectModal] = useState(false);
   const [pendingSessionDate, setPendingSessionDate] = useState<string | null>(null);
-  const [selectedClassId, setSelectedClassId] = useState<string>('');
-
-  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (!studentData) return;
