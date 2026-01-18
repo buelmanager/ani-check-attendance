@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Classes - authenticated users can write, public read
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Students - authenticated users can write, public read
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Attendances - public create for QR check-in, authenticated for update/delete
+    match /attendances/{attendanceId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if request.auth != null;
+    }
+
+    // QR Sessions - authenticated users can write, public read
+    match /qrSessions/{sessionId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Admins - authenticated users can manage
+    match /admins/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}
