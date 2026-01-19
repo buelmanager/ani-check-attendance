@@ -25,6 +25,7 @@ import StudentDashboard from './pages/student/StudentDashboard';
 import StudentSchedule from './pages/student/StudentSchedule';
 import StudentNotices from './pages/student/StudentNotices';
 import StudentCheckin from './pages/student/StudentCheckin';
+import StudentSettings from './pages/student/StudentSettings';
 
 // Parent Pages
 import ParentLogin from './pages/parent/ParentLogin';
@@ -32,6 +33,7 @@ import ParentDashboard from './pages/parent/ParentDashboard';
 import ParentChildDetail from './pages/parent/ParentChildDetail';
 import ParentNotices from './pages/parent/ParentNotices';
 import ParentNotifications from './pages/parent/ParentNotifications';
+import ParentSettings from './pages/parent/ParentSettings';
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin';
@@ -80,6 +82,11 @@ function AppContent() {
           <StudentCheckin />
         </StudentRoute>
       } />
+      <Route path="/student/settings" element={
+        <StudentRoute>
+          <StudentSettings />
+        </StudentRoute>
+      } />
 
       {/* Parent Routes */}
       <Route path="/parent/login" element={<ParentLogin />} />
@@ -101,6 +108,11 @@ function AppContent() {
       <Route path="/parent/notifications" element={
         <ParentRoute>
           <ParentNotifications />
+        </ParentRoute>
+      } />
+      <Route path="/parent/settings" element={
+        <ParentRoute>
+          <ParentSettings />
         </ParentRoute>
       } />
 
