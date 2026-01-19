@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ParentLayout } from '../../components/parent/ParentLayout';
 import { studentService } from '../../services/studentService';
@@ -8,11 +9,25 @@ import type { Student, Class, Announcement } from '../../types';
 
 export default function ParentNotices() {
   const { parentData } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [children, setChildren] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
+
+  // URL 파라미터에서 공지 ID 확인하여 상세 모달 자동 열기
+  useEffect(() => {
+    const announcementId = searchParams.get('id');
+    if (announcementId && announcements.length > 0) {
+      const announcement = announcements.find(a => a.id === announcementId);
+      if (announcement) {
+        setSelectedAnnouncement(announcement);
+        // URL 파라미터 제거 (뒤로가기 시 모달이 다시 열리지 않도록)
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [announcements, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!parentData) return;

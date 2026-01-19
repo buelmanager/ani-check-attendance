@@ -389,7 +389,11 @@ export default function ParentDashboard() {
           {announcements.length > 0 ? (
             <div className="space-y-3">
               {announcements.map((ann) => (
-                <div key={ann.id} className="card">
+                <button
+                  key={ann.id}
+                  onClick={() => navigate(`/parent/notices?id=${ann.id}`)}
+                  className="w-full card card-hover text-left"
+                >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
                       <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -404,7 +408,7 @@ export default function ParentDashboard() {
                       </p>
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
