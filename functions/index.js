@@ -50,27 +50,15 @@ exports.sendPushOnNotification = onDocumentCreated(
         announcement: "campaign",
       };
 
-      // FCM 메시지 생성
+      // FCM 메시지 생성 (data-only 메시지로 중복 알림 방지)
+      // notification 필드를 사용하지 않고 data만 사용하여 Service Worker에서만 알림 표시
       const fcmMessage = {
-        notification: {
+        data: {
           title: title || "ANI WID 알림",
           body: message || "",
-        },
-        data: {
           type: type || "general",
           notificationId: event.params.notificationId,
-          click_action: "FLUTTER_NOTIFICATION_CLICK",
-        },
-        webpush: {
-          notification: {
-            icon: "/icons/icon-192x192.png",
-            badge: "/icons/icon-72x72.png",
-            tag: type || "general",
-            requireInteraction: type === "absent",
-          },
-          fcmOptions: {
-            link: "/parent/notifications",
-          },
+          url: "/parent/notifications",
         },
       };
 

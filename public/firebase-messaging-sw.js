@@ -13,22 +13,24 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// 백그라운드 메시지 처리
+// 백그라운드 메시지 처리 (data-only 메시지)
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message:', payload);
 
-  const notificationTitle = payload.notification?.title || '새 알림';
+  // data 필드에서 알림 정보 추출 (notification 필드 없음)
+  const data = payload.data || {};
+  const notificationTitle = data.title || '새 알림';
   const notificationOptions = {
-    body: payload.notification?.body || '',
+    body: data.body || '',
     icon: '/icons/logo.png',
     badge: '/icons/logo.png',
-    tag: payload.data?.tag || 'default',
-    data: payload.data,
-    requireInteraction: true,
-    actions: [
-      { action: 'open', title: '열기' },
-      { action: 'close', title: '닫기' }
-    ]
+    tag: data.type || 'default',
+    data: {
+      url: data.url || '/parent/notifications',
+      type: data.type,
+      notificationId: data.notificationId,
+    },
+    requireInteraction: data.type === 'absent',
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
