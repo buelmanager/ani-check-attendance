@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { APP_VERSION } from '../../config/version';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -148,6 +149,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             >
               로그아웃
             </button>
+            <p className="text-xs text-gray-400 text-center mt-3">v{APP_VERSION}</p>
           </div>
         </div>
       </aside>
