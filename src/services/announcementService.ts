@@ -78,8 +78,12 @@ export const announcementService = {
   },
 
   async create(data: Omit<Announcement, 'id' | 'createdAt'>): Promise<string> {
+    // undefined 값 필터링 (Firebase는 undefined를 지원하지 않음)
+    const filteredData = Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined)
+    );
     const docRef = await addDoc(collection(db, COLLECTION), {
-      ...data,
+      ...filteredData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
@@ -87,8 +91,12 @@ export const announcementService = {
   },
 
   async update(id: string, data: Partial<Announcement>): Promise<void> {
+    // undefined 값 필터링 (Firebase는 undefined를 지원하지 않음)
+    const filteredData = Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined)
+    );
     await updateDoc(doc(db, COLLECTION, id), {
-      ...data,
+      ...filteredData,
       updatedAt: serverTimestamp()
     });
   },
