@@ -19,7 +19,35 @@ export default function DonutChart({
   centerLabel,
   centerValue
 }: DonutChartProps) {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
+  // 데이터가 없거나 유효하지 않으면 빈 차트 렌더링
+  if (!data || data.length === 0) {
+    return (
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="transform -rotate-90">
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={(size - strokeWidth) / 2}
+            fill="none"
+            stroke="#f3f4f6"
+            strokeWidth={strokeWidth}
+          />
+        </svg>
+        {(centerLabel || centerValue) && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            {centerValue !== undefined && (
+              <span className="text-2xl font-bold text-gray-900">{centerValue}</span>
+            )}
+            {centerLabel && (
+              <span className="text-xs text-gray-500">{centerLabel}</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const total = data.reduce((sum, item) => sum + (item?.value ?? 0), 0);
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
@@ -81,7 +109,10 @@ export default function DonutChart({
 }
 
 export function DonutChartLegend({ data }: { data: DonutChartData[] }) {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
+  // 데이터가 없으면 빈 div 반환
+  if (!data || data.length === 0) return <div />;
+
+  const total = data.reduce((sum, item) => sum + (item?.value ?? 0), 0);
 
   return (
     <div className="space-y-2">

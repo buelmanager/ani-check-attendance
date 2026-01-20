@@ -40,10 +40,10 @@ export const consultationService = {
 
   // 특정 학생의 상담 실시간 구독
   subscribeByStudent(studentId: string, callback: (consultations: Consultation[]) => void) {
+    // 복합 인덱스 없이 studentId만 필터링 (클라이언트에서 정렬)
     const q = query(
       collection(db, COLLECTION),
-      where('studentId', '==', studentId),
-      orderBy('createdAt', 'desc')
+      where('studentId', '==', studentId)
     );
     return onSnapshot(q, (snapshot) => {
       const consultations = snapshot.docs.map(doc => {
@@ -55,9 +55,13 @@ export const consultationService = {
           updatedAt: data.updatedAt ? (data.updatedAt as Timestamp)?.toDate().toISOString() : undefined
         };
       }) as Consultation[];
+      // 클라이언트에서 정렬
+      consultations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       callback(consultations);
     }, (error) => {
       console.error('Consultations subscription error:', error);
+      // 에러 발생 시 빈 배열 반환
+      callback([]);
     });
   },
 
@@ -95,14 +99,17 @@ export const consultationService = {
   async getByStudent(studentId: string): Promise<Consultation[]> {
     const q = query(
       collection(db, COLLECTION),
-      where('studentId', '==', studentId),
-      orderBy('createdAt', 'desc')
+      where('studentId', '==', studentId)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
+    const consultations = snapshot.docs.map(doc => ({
       ...doc.data(),
       id: doc.id
     })) as Consultation[];
+    // 클라이언트에서 정렬
+    return consultations.sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   },
 
   // 특정 상담 조회

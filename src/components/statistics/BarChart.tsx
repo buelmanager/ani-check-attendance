@@ -20,7 +20,12 @@ export default function BarChart({
   showValues = true,
   barColor = 'bg-accent'
 }: BarChartProps) {
-  const max = maxValue || Math.max(...data.map(d => d.value), 1);
+  // 데이터가 없거나 유효하지 않으면 null 반환
+  if (!data || data.length === 0) return null;
+
+  // 유효한 값들만 계산에 사용
+  const validValues = data.map(d => d?.value ?? 0).filter(v => !isNaN(v));
+  const max = maxValue || Math.max(...validValues, 1);
 
   return (
     <div className="flex items-end justify-between gap-2" style={{ height }}>

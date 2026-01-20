@@ -70,10 +70,10 @@ export const homeworkService = {
 
   // 특정 학생의 숙제 실시간 구독
   subscribeByStudent(studentId: string, callback: (homeworks: Homework[]) => void) {
+    // 복합 인덱스 없이 studentIds만 필터링 (클라이언트에서 정렬)
     const q = query(
       collection(db, COLLECTION),
-      where('studentIds', 'array-contains', studentId),
-      orderBy('dueDate', 'desc')
+      where('studentIds', 'array-contains', studentId)
     );
     return onSnapshot(q, (snapshot) => {
       const homeworks = snapshot.docs.map(doc => {
@@ -85,9 +85,13 @@ export const homeworkService = {
           submissions: data.submissions || []
         };
       }) as Homework[];
+      // 클라이언트에서 정렬
+      homeworks.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
       callback(homeworks);
     }, (error) => {
       console.error('Homeworks subscription error:', error);
+      // 에러 발생 시 빈 배열 반환
+      callback([]);
     });
   },
 
@@ -282,10 +286,10 @@ export const homeworkService = {
 
   // 미완료 숙제 구독 (학생용)
   subscribePendingByStudent(studentId: string, callback: (homeworks: Homework[]) => void) {
+    // 복합 인덱스 없이 studentIds만 필터링 (클라이언트에서 정렬)
     const q = query(
       collection(db, COLLECTION),
-      where('studentIds', 'array-contains', studentId),
-      orderBy('dueDate', 'asc')
+      where('studentIds', 'array-contains', studentId)
     );
     return onSnapshot(q, (snapshot) => {
       const homeworks = snapshot.docs.map(doc => {
@@ -304,9 +308,14 @@ export const homeworkService = {
         return submission?.status === 'pending';
       });
 
+      // 클라이언트에서 정렬
+      pending.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
       callback(pending);
     }, (error) => {
       console.error('Homeworks subscription error:', error);
+      // 에러 발생 시 빈 배열 반환
+      callback([]);
     });
   }
 };

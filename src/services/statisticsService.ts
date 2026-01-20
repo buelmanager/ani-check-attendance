@@ -494,10 +494,15 @@ export const statisticsService = {
     attendances.forEach(a => {
       if (a.checkInTime) {
         const hour = parseInt(a.checkInTime.split(':')[0], 10);
-        const data = hourly.get(hour)!;
-        data.total++;
-        if (a.status === 'present') data.present++;
-        if (a.status === 'late') data.late++;
+        // 유효한 시간 범위인지 확인 (0-23)
+        if (!isNaN(hour) && hour >= 0 && hour < 24) {
+          const data = hourly.get(hour);
+          if (data) {
+            data.total++;
+            if (a.status === 'present') data.present++;
+            if (a.status === 'late') data.late++;
+          }
+        }
       }
     });
 
@@ -608,9 +613,19 @@ export const statisticsService = {
   },
 
   // 출석 패턴 분석
-  getAttendancePattern(attendances: Attendance[]): AttendancePattern {
+  getAttendancePattern(attendances: Attendance[]): AttendancePattern | null {
+    // 출석 데이터가 없으면 null 반환
+    if (!attendances || attendances.length === 0) {
+      return null;
+    }
+
     const dayStats = this.getDayOfWeekStats(attendances);
     const hourStats = this.getHourlyStats(attendances);
+
+    // 데이터가 없는 경우 대비
+    if (!dayStats || dayStats.length === 0 || !hourStats || hourStats.length === 0) {
+      return null;
+    }
 
     // 최고/최저 요일
     const sortedDays = [...dayStats].sort(
@@ -618,6 +633,11 @@ export const statisticsService = {
     );
     const bestDay = sortedDays[0];
     const worstDay = sortedDays[sortedDays.length - 1];
+
+    // 데이터가 없는 경우 대비
+    if (!bestDay || !worstDay) {
+      return null;
+    }
 
     // 피크 시간
     const peakHour = hourStats.reduce(
@@ -656,8 +676,8 @@ export const statisticsService = {
         rate: worstDay.stats.attendanceRate
       },
       peakHour: {
-        hour: peakHour.hour,
-        count: peakHour.count
+        hour: peakHour?.hour ?? 0,
+        count: peakHour?.count ?? 0
       },
       averageCheckInTime: `${String(avgHour).padStart(2, '0')}:${String(avgMin).padStart(2, '0')}`,
       mostCommonLateTime: lateTimes.length > 0 ? lateTimes[0] : 'N/A'

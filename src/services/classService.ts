@@ -50,8 +50,12 @@ export const classService = {
   },
 
   async create(data: Omit<Class, 'id' | 'createdAt'>): Promise<string> {
+    // Filter out undefined values (Firebase doesn't support undefined)
+    const filteredData = Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined)
+    );
     const docRef = await addDoc(collection(db, COLLECTION), {
-      ...data,
+      ...filteredData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });

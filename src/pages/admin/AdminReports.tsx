@@ -141,19 +141,23 @@ export default function AdminReports() {
   const weeklyChartData = useMemo(() => {
     const last7Days = dailyStats.slice(-7);
     return last7Days.map(day => ({
-      label: DAY_LABELS[day.dayOfWeek],
+      label: day.date.slice(5).replace('-', '/'),
       value: day.attendanceRate,
-      subLabel: day.date.slice(5).replace('-', '/')
+      subLabel: DAY_LABELS[day.dayOfWeek]
     }));
   }, [dailyStats]);
 
   // 월별 차트 데이터
   const monthlyChartData = useMemo(() => {
     const trends = statisticsService.getAttendanceTrends(attendances, 6);
-    return trends.map(t => ({
-      label: t.period,
-      value: t.rate
-    }));
+    return trends.map(t => {
+      // "2025년 8월" -> "8월"
+      const match = t.period.match(/(\d+)월/);
+      return {
+        label: match ? `${match[1]}월` : t.period,
+        value: t.rate
+      };
+    });
   }, [attendances]);
 
   // 출석 상태별 도넛 차트 데이터

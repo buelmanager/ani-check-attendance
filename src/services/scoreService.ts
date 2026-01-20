@@ -104,10 +104,10 @@ export const scoreService = {
 
   // 특정 반의 시험 실시간 구독
   subscribeByClass(classId: string, callback: (exams: Exam[]) => void) {
+    // 복합 인덱스 없이 classId만 필터링 (클라이언트에서 정렬)
     const q = query(
       collection(db, COLLECTION),
-      where('classId', '==', classId),
-      orderBy('examDate', 'desc')
+      where('classId', '==', classId)
     );
     return onSnapshot(q, (snapshot) => {
       const exams = snapshot.docs.map(doc => {
@@ -119,9 +119,13 @@ export const scoreService = {
           scores: data.scores || []
         };
       }) as Exam[];
+      // 클라이언트에서 정렬
+      exams.sort((a, b) => new Date(b.examDate).getTime() - new Date(a.examDate).getTime());
       callback(exams);
     }, (error) => {
       console.error('Exams subscription error:', error);
+      // 에러 발생 시 빈 배열 반환
+      callback([]);
     });
   },
 
@@ -279,6 +283,8 @@ export const scoreService = {
       callback(studentExams);
     }, (error) => {
       console.error('Exams subscription error:', error);
+      // 에러 발생 시 빈 배열 반환
+      callback([]);
     });
   }
 };

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
 
 const firebaseConfig = {
@@ -14,7 +14,14 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Initialize Firestore with persistent cache and experimental long polling for better connectivity
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  }),
+  experimentalForceLongPolling: true
+});
 
 // FCM 메시징 (브라우저 지원 확인 후 초기화)
 let messaging: ReturnType<typeof getMessaging> | null = null;
@@ -67,13 +74,7 @@ export const onForegroundMessage = (callback: (payload: unknown) => void) => {
   return onMessage(messaging, callback);
 };
 
-// Enable offline persistence for PWA support
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code === 'failed-precondition') {
-    console.warn('Firestore persistence failed: Multiple tabs open');
-  } else if (err.code === 'unimplemented') {
-    console.warn('Firestore persistence not available in this browser');
-  }
-});
+// Note: Offline persistence is now configured via initializeFirestore above
+// using persistentLocalCache with persistentMultipleTabManager for multi-tab support
 
 export default app;
