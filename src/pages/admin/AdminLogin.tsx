@@ -7,10 +7,8 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [name, setName] = useState('');
 
-  const { loginAsAdmin, register } = useAuth();
+  const { loginAsAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -22,16 +20,7 @@ export default function AdminLogin() {
     setIsLoading(true);
 
     try {
-      if (isRegisterMode) {
-        if (!name.trim()) {
-          setError('이름을 입력해주세요.');
-          setIsLoading(false);
-          return;
-        }
-        await register(email, password, name);
-      } else {
-        await loginAsAdmin(email, password);
-      }
+      await loginAsAdmin(email, password);
       navigate(from, { replace: true });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : '오류가 발생했습니다.';
@@ -39,10 +28,6 @@ export default function AdminLogin() {
         setError('이메일 또는 비밀번호가 올바르지 않습니다.');
       } else if (errorMessage.includes('auth/user-not-found')) {
         setError('등록되지 않은 이메일입니다.');
-      } else if (errorMessage.includes('auth/email-already-in-use')) {
-        setError('이미 사용 중인 이메일입니다.');
-      } else if (errorMessage.includes('auth/weak-password')) {
-        setError('비밀번호는 6자 이상이어야 합니다.');
       } else {
         setError(errorMessage);
       }
@@ -57,9 +42,7 @@ export default function AdminLogin() {
         {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-accent mb-2">ANI WID</h1>
-          <p className="text-gray-500">
-            {isRegisterMode ? '관리자 계정 생성' : '관리자 로그인'}
-          </p>
+          <p className="text-gray-500">관리자 로그인</p>
         </div>
 
         {/* Login Form */}
@@ -68,20 +51,6 @@ export default function AdminLogin() {
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
                 {error}
-              </div>
-            )}
-
-            {isRegisterMode && (
-              <div>
-                <label className="text-sm text-gray-600 mb-2 block">이름</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="input-field"
-                  placeholder="관리자 이름"
-                  required
-                />
               </div>
             )}
 
@@ -115,22 +84,9 @@ export default function AdminLogin() {
               disabled={isLoading}
               className="w-full btn-accent disabled:opacity-50"
             >
-              {isLoading ? '처리 중...' : isRegisterMode ? '계정 생성' : '로그인'}
+              {isLoading ? '처리 중...' : '로그인'}
             </button>
           </form>
-
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setIsRegisterMode(!isRegisterMode);
-                setError('');
-              }}
-              className="text-accent text-sm hover:underline"
-            >
-              {isRegisterMode ? '이미 계정이 있으신가요? 로그인' : '계정이 없으신가요? 등록하기'}
-            </button>
-          </div>
         </div>
 
         {/* Back link */}

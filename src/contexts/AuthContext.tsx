@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   createUserWithEmailAndPassword
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { studentService } from '../services/studentService';
 import { parentService } from '../services/parentService';
@@ -39,7 +39,6 @@ interface AuthContextType {
   loginAsParent: (phone: string, password: string) => Promise<void>;
   loginAsAdmin: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
   registerStudent: (phone: string, password: string, name: string, inviteCode: string) => Promise<void>;
   registerParent: (phone: string, password: string, name: string, inviteCode: string) => Promise<void>;
   addChildToParent: (inviteCode: string) => Promise<void>;
@@ -174,19 +173,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
 
-  // 관리자 등록 (기존)
-  const register = async (email: string, password: string, name: string) => {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    await setDoc(doc(db, 'admins', result.user.uid), {
-      email,
-      name,
-      role: 'admin',
-      createdAt: serverTimestamp()
-    });
-    setAdminData({ email, name, role: 'admin' });
-    setUserRole('admin');
-  };
-
   // 학생 등록 (초대 코드로) - 핸드폰 번호 사용
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const registerStudent = async (phone: string, password: string, _name: string, inviteCode: string) => {
@@ -294,7 +280,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginAsParent,
       loginAsAdmin,
       logout,
-      register,
       registerStudent,
       registerParent,
       addChildToParent
