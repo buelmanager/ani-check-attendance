@@ -1,22 +1,97 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
-import type { Student } from '../../types';
+import { studentService } from '../../services/studentService';
+import type { Student, StudentStatus, GradeLevel } from '../../types';
+
+// 학년 옵션
+const GRADE_OPTIONS: GradeLevel[] = [
+  '미취학',
+  '초1', '초2', '초3', '초4', '초5', '초6',
+  '중1', '중2', '중3',
+  '고1', '고2', '고3',
+  '성인'
+];
+
+// 상태 라벨
+const STATUS_LABELS: Record<StudentStatus, string> = {
+  active: '재원',
+  inactive: '휴원',
+  withdrawn: '퇴원'
+};
+
+// 상태 색상
+const STATUS_COLORS: Record<StudentStatus, string> = {
+  active: 'bg-green-100 text-green-700',
+  inactive: 'bg-yellow-100 text-yellow-700',
+  withdrawn: 'bg-red-100 text-red-700'
+};
+
+interface FormData {
+  name: string;
+  phone: string;
+  parentPhone: string;
+  birthDate: string;
+  gender: 'male' | 'female' | '';
+  school: string;
+  grade: GradeLevel | '';
+  address: string;
+  emergencyContact: string;
+  notes: string;
+  enrolledAt: string;
+}
+
+const initialFormData: FormData = {
+  name: '',
+  phone: '',
+  parentPhone: '',
+  birthDate: '',
+  gender: '',
+  school: '',
+  grade: '',
+  address: '',
+  emergencyContact: '',
+  notes: '',
+  enrolledAt: new Date().toISOString().split('T')[0]
+};
 
 export default function AdminStudents() {
+  const navigate = useNavigate();
   const { students, classes, addStudent, updateStudent, deleteStudent } = useStore();
   const [showModal, setShowModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [editingStudent, setEditingStudent] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: '', phone: '', parentPhone: '' });
+  const [formData, setFormData] = useState<FormData>(initialFormData);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const filteredStudents = students.filter((s) =>
-    s.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // 필터 상태
+  const [statusFilter, setStatusFilter] = useState<StudentStatus | 'all'>('all');
+  const [gradeFilter, setGradeFilter] = useState<GradeLevel | 'all'>('all');
+
+  // 상태 변경 폼
+  const [newStatus, setNewStatus] = useState<StudentStatus>('active');
+  const [statusReason, setStatusReason] = useState('');
+
+  // 필터링된 학생 목록
+  const filteredStudents = students.filter((s) => {
+    const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
+    const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
+    return matchesSearch && matchesStatus && matchesGrade;
+  });
+
+  // 상태별 카운트
+  const statusCounts = {
+    all: students.length,
+    active: students.filter(s => s.status === 'active' || !s.status).length,
+    inactive: students.filter(s => s.status === 'inactive').length,
+    withdrawn: students.filter(s => s.status === 'withdrawn').length
+  };
 
   const getStudentClasses = (studentId: string) => {
     return classes.filter((c) => c.studentIds.includes(studentId));
@@ -45,23 +120,54 @@ export default function AdminStudents() {
     setShowInviteModal(true);
   };
 
+  // 상태 변경 모달 열기
+  const openStatusModal = (student: Student) => {
+    setSelectedStudent(student);
+    setNewStatus(student.status || 'active');
+    setStatusReason('');
+    setShowStatusModal(true);
+  };
+
+  // 상태 변경 처리
+  const handleStatusChange = async () => {
+    if (!selectedStudent) return;
+
+    setIsSubmitting(true);
+    try {
+      await studentService.changeStatus(selectedStudent.id, newStatus, statusReason || undefined);
+      setShowStatusModal(false);
+      setSelectedStudent(null);
+    } catch (error) {
+      console.error('Error changing status:', error);
+      alert('상태 변경 중 오류가 발생했습니다.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.name.trim()) return;
 
     setIsSubmitting(true);
     try {
+      const studentData = {
+        name: formData.name,
+        phone: formData.phone || undefined,
+        parentPhone: formData.parentPhone || undefined,
+        birthDate: formData.birthDate || undefined,
+        gender: formData.gender || undefined,
+        school: formData.school || undefined,
+        grade: formData.grade || undefined,
+        address: formData.address || undefined,
+        emergencyContact: formData.emergencyContact || undefined,
+        notes: formData.notes || undefined,
+        enrolledAt: formData.enrolledAt || undefined
+      };
+
       if (editingStudent) {
-        await updateStudent(editingStudent, {
-          name: formData.name,
-          phone: formData.phone || undefined,
-          parentPhone: formData.parentPhone || undefined
-        });
+        await updateStudent(editingStudent, studentData);
       } else {
-        await addStudent({
-          name: formData.name,
-          phone: formData.phone || undefined,
-          parentPhone: formData.parentPhone || undefined
-        });
+        await addStudent(studentData);
       }
       closeModal();
     } catch (error) {
@@ -83,12 +189,20 @@ export default function AdminStudents() {
     }
   };
 
-  const openEditModal = (student: typeof students[0]) => {
+  const openEditModal = (student: Student) => {
     setEditingStudent(student.id);
     setFormData({
       name: student.name,
       phone: student.phone || '',
-      parentPhone: student.parentPhone || ''
+      parentPhone: student.parentPhone || '',
+      birthDate: student.birthDate || '',
+      gender: student.gender || '',
+      school: student.school || '',
+      grade: student.grade || '',
+      address: student.address || '',
+      emergencyContact: student.emergencyContact || '',
+      notes: student.notes || '',
+      enrolledAt: student.enrolledAt?.split('T')[0] || ''
     });
     setShowModal(true);
   };
@@ -96,7 +210,19 @@ export default function AdminStudents() {
   const closeModal = () => {
     setShowModal(false);
     setEditingStudent(null);
-    setFormData({ name: '', phone: '', parentPhone: '' });
+    setFormData(initialFormData);
+  };
+
+  // 나이 계산
+  const calculateAge = (birthDate: string) => {
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   return (
@@ -118,9 +244,53 @@ export default function AdminStudents() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative">
+      {/* 상태 필터 탭 */}
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+        <button
+          onClick={() => setStatusFilter('all')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            statusFilter === 'all'
+              ? 'bg-primary text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          전체 ({statusCounts.all})
+        </button>
+        <button
+          onClick={() => setStatusFilter('active')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            statusFilter === 'active'
+              ? 'bg-green-500 text-white'
+              : 'bg-green-50 text-green-700 hover:bg-green-100'
+          }`}
+        >
+          재원 ({statusCounts.active})
+        </button>
+        <button
+          onClick={() => setStatusFilter('inactive')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            statusFilter === 'inactive'
+              ? 'bg-yellow-500 text-white'
+              : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+          }`}
+        >
+          휴원 ({statusCounts.inactive})
+        </button>
+        <button
+          onClick={() => setStatusFilter('withdrawn')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            statusFilter === 'withdrawn'
+              ? 'bg-red-500 text-white'
+              : 'bg-red-50 text-red-700 hover:bg-red-100'
+          }`}
+        >
+          퇴원 ({statusCounts.withdrawn})
+        </button>
+      </div>
+
+      {/* Search & Filter */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
           <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -132,6 +302,16 @@ export default function AdminStudents() {
             className="input-field pl-12"
           />
         </div>
+        <select
+          value={gradeFilter}
+          onChange={(e) => setGradeFilter(e.target.value as GradeLevel | 'all')}
+          className="input-field w-full sm:w-40"
+        >
+          <option value="all">전체 학년</option>
+          {GRADE_OPTIONS.map((grade) => (
+            <option key={grade} value={grade}>{grade}</option>
+          ))}
+        </select>
       </div>
 
       {/* Students Table */}
@@ -141,10 +321,11 @@ export default function AdminStudents() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">이름</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">초대 코드</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">상태</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">학년</th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">연락처</th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">등록 클래스</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">계정 상태</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">계정</th>
                 <th className="px-6 py-4 text-right text-sm font-medium text-gray-500">작업</th>
               </tr>
             </thead>
@@ -153,25 +334,47 @@ export default function AdminStudents() {
                 const studentClasses = getStudentClasses(student.id);
                 const hasAccount = !!student.userId;
                 const hasParents = student.parentIds && student.parentIds.length > 0;
+                const status = student.status || 'active';
 
                 return (
                   <tr key={student.id} className="hover:bg-gray-50/50">
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-                          <span className="text-primary font-bold text-sm">{student.name.charAt(0)}</span>
+                      <button
+                        onClick={() => navigate(`/admin/students/${student.id}`)}
+                        className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+                      >
+                        {student.profileImage ? (
+                          <img
+                            src={student.profileImage}
+                            alt={student.name}
+                            className="w-10 h-10 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
+                            <span className="text-primary font-bold text-sm">{student.name.charAt(0)}</span>
+                          </div>
+                        )}
+                        <div className="text-left">
+                          <span className="font-medium text-gray-900 block">{student.name}</span>
+                          {student.birthDate && (
+                            <span className="text-xs text-gray-500">
+                              만 {calculateAge(student.birthDate)}세
+                            </span>
+                          )}
                         </div>
-                        <span className="font-medium text-gray-900">{student.name}</span>
-                      </div>
+                      </button>
                     </td>
                     <td className="px-6 py-4">
-                      {student.inviteCode ? (
-                        <button
-                          onClick={() => openInviteModal(student)}
-                          className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-sm font-mono hover:bg-blue-100 transition-colors"
-                        >
-                          {student.inviteCode}
-                        </button>
+                      <button
+                        onClick={() => openStatusModal(student)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[status]} hover:opacity-80 transition-opacity`}
+                      >
+                        {STATUS_LABELS[status]}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4">
+                      {student.grade ? (
+                        <span className="text-gray-700">{student.grade}</span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
@@ -198,17 +401,27 @@ export default function AdminStudents() {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           hasAccount ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
                         }`}>
-                          {hasAccount ? '학생 연결됨' : '미연결'}
+                          {hasAccount ? '연결됨' : '미연결'}
                         </span>
                         {hasParents && (
                           <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
-                            부모 {student.parentIds?.length}명
+                            부모 {student.parentIds?.length}
                           </span>
                         )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => navigate(`/admin/students/${student.id}`)}
+                          className="p-2 text-gray-500 hover:text-primary rounded-lg hover:bg-primary/10"
+                          title="상세보기"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </button>
                         <button
                           onClick={() => openInviteModal(student)}
                           className="p-2 text-gray-500 hover:text-blue-500 rounded-lg hover:bg-blue-500/10"
@@ -247,7 +460,9 @@ export default function AdminStudents() {
           {filteredStudents.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-500">
-                {searchQuery ? '검색 결과가 없습니다.' : '등록된 학생이 없습니다.'}
+                {searchQuery || statusFilter !== 'all' || gradeFilter !== 'all'
+                  ? '검색 결과가 없습니다.'
+                  : '등록된 학생이 없습니다.'}
               </p>
             </div>
           )}
@@ -258,12 +473,17 @@ export default function AdminStudents() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={closeModal} />
-          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-6">
               {editingStudent ? '학생 정보 수정' : '새 학생 추가'}
             </h2>
 
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 기본 정보 */}
+              <div className="md:col-span-2">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">기본 정보</h3>
+              </div>
+
               <div>
                 <label className="text-sm text-gray-500 mb-2 block">이름 *</label>
                 <input
@@ -276,7 +496,70 @@ export default function AdminStudents() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500 mb-2 block">연락처</label>
+                <label className="text-sm text-gray-500 mb-2 block">생년월일</label>
+                <input
+                  type="date"
+                  value={formData.birthDate}
+                  onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">성별</label>
+                <select
+                  value={formData.gender}
+                  onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'male' | 'female' | '' })}
+                  className="input-field"
+                >
+                  <option value="">선택 안함</option>
+                  <option value="male">남</option>
+                  <option value="female">여</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">학년</label>
+                <select
+                  value={formData.grade}
+                  onChange={(e) => setFormData({ ...formData, grade: e.target.value as GradeLevel | '' })}
+                  className="input-field"
+                >
+                  <option value="">선택 안함</option>
+                  {GRADE_OPTIONS.map((grade) => (
+                    <option key={grade} value={grade}>{grade}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">학교</label>
+                <input
+                  type="text"
+                  value={formData.school}
+                  onChange={(e) => setFormData({ ...formData, school: e.target.value })}
+                  placeholder="학교명"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">입학일</label>
+                <input
+                  type="date"
+                  value={formData.enrolledAt}
+                  onChange={(e) => setFormData({ ...formData, enrolledAt: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
+              {/* 연락처 정보 */}
+              <div className="md:col-span-2 mt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">연락처 정보</h3>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">학생 연락처</label>
                 <input
                   type="tel"
                   value={formData.phone}
@@ -296,6 +579,43 @@ export default function AdminStudents() {
                   className="input-field"
                 />
               </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">긴급연락처</label>
+                <input
+                  type="tel"
+                  value={formData.emergencyContact}
+                  onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
+                  placeholder="010-0000-0000"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">주소</label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  placeholder="주소"
+                  className="input-field"
+                />
+              </div>
+
+              {/* 메모 */}
+              <div className="md:col-span-2 mt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">메모</h3>
+              </div>
+
+              <div className="md:col-span-2">
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="특이사항, 알레르기, 주의사항 등"
+                  rows={3}
+                  className="input-field resize-none"
+                />
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -308,6 +628,71 @@ export default function AdminStudents() {
                 className="flex-1 btn-accent disabled:opacity-50"
               >
                 {isSubmitting ? '저장 중...' : editingStudent ? '수정' : '추가'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Change Modal */}
+      {showStatusModal && selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowStatusModal(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">상태 변경</h2>
+            <p className="text-gray-500 mb-6">
+              <span className="font-semibold text-gray-900">{selectedStudent.name}</span> 학생의 상태를 변경합니다.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">변경할 상태</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['active', 'inactive', 'withdrawn'] as StudentStatus[]).map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => setNewStatus(status)}
+                      className={`py-3 rounded-lg text-sm font-medium transition-colors ${
+                        newStatus === status
+                          ? STATUS_COLORS[status].replace('bg-', 'bg-').replace('-100', '-500') + ' text-white'
+                          : STATUS_COLORS[status]
+                      }`}
+                    >
+                      {STATUS_LABELS[status]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(newStatus === 'inactive' || newStatus === 'withdrawn') && (
+                <div>
+                  <label className="text-sm text-gray-500 mb-2 block">
+                    {newStatus === 'inactive' ? '휴원' : '퇴원'} 사유
+                  </label>
+                  <textarea
+                    value={statusReason}
+                    onChange={(e) => setStatusReason(e.target.value)}
+                    placeholder="사유를 입력하세요 (선택)"
+                    rows={3}
+                    className="input-field resize-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="flex-1 btn-outline"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleStatusChange}
+                disabled={isSubmitting}
+                className="flex-1 btn-accent disabled:opacity-50"
+              >
+                {isSubmitting ? '변경 중...' : '변경'}
               </button>
             </div>
           </div>

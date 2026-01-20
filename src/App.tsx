@@ -34,6 +34,7 @@ import ParentChildDetail from './pages/parent/ParentChildDetail';
 import ParentNotices from './pages/parent/ParentNotices';
 import ParentNotifications from './pages/parent/ParentNotifications';
 import ParentSettings from './pages/parent/ParentSettings';
+import ParentMessages from './pages/parent/ParentMessages';
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin';
@@ -44,6 +45,8 @@ import AdminAttendance from './pages/admin/AdminAttendance';
 import AdminReports from './pages/admin/AdminReports';
 import AdminAnnouncements from './pages/admin/AdminAnnouncements';
 import AdminSettings from './pages/admin/AdminSettings';
+import AdminNotices from './pages/admin/AdminNotices';
+import StudentDetail from './pages/admin/StudentDetail';
 
 function AppContent() {
   const initializeSubscriptions = useStore((state) => state.initializeSubscriptions);
@@ -115,6 +118,11 @@ function AppContent() {
           <ParentSettings />
         </ParentRoute>
       } />
+      <Route path="/parent/messages" element={
+        <ParentRoute>
+          <ParentMessages />
+        </ParentRoute>
+      } />
 
       {/* Admin Routes */}
       <Route path="/admin/login" element={<AdminLogin />} />
@@ -131,6 +139,11 @@ function AppContent() {
       <Route path="/admin/students" element={
         <ProtectedRoute>
           <AdminStudents />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/students/:id" element={
+        <ProtectedRoute>
+          <StudentDetail />
         </ProtectedRoute>
       } />
       <Route path="/admin/attendance" element={
@@ -151,6 +164,11 @@ function AppContent() {
       <Route path="/admin/settings" element={
         <ProtectedRoute>
           <AdminSettings />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/notices" element={
+        <ProtectedRoute>
+          <AdminNotices />
         </ProtectedRoute>
       } />
 

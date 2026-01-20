@@ -14,7 +14,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import type { Student } from '../types';
+import type { Student, StudentStatus, StatusChange } from '../types';
 
 const COLLECTION = 'students';
 
@@ -32,12 +32,18 @@ export const studentService = {
   subscribe(callback: (students: Student[]) => void) {
     const q = query(collection(db, COLLECTION), orderBy('name', 'asc'));
     return onSnapshot(q, (snapshot) => {
-      const students = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-        createdAt: (doc.data().createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-        parentIds: doc.data().parentIds || []
-      })) as Student[];
+      const students = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          createdAt: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+          enrolledAt: data.enrolledAt ? (data.enrolledAt as Timestamp)?.toDate?.()?.toISOString() || data.enrolledAt : undefined,
+          parentIds: data.parentIds || [],
+          status: data.status || 'active', // 기존 데이터 호환
+          statusHistory: data.statusHistory || []
+        };
+      }) as Student[];
       callback(students);
     }, (error) => {
       console.error('Students subscription error:', error);
@@ -91,7 +97,7 @@ export const studentService = {
     } as Student;
   },
 
-  async create(data: Omit<Student, 'id' | 'createdAt' | 'inviteCode' | 'parentIds'>): Promise<string> {
+  async create(data: Omit<Student, 'id' | 'createdAt' | 'inviteCode' | 'parentIds' | 'status' | 'statusHistory' | 'enrolledAt'> & { enrolledAt?: string }): Promise<string> {
     // 고유한 초대 코드 생성 (중복 체크)
     let inviteCode = generateInviteCode();
     let existing = await this.getByInviteCode(inviteCode);
@@ -100,10 +106,19 @@ export const studentService = {
       existing = await this.getByInviteCode(inviteCode);
     }
 
+    const now = new Date().toISOString();
+    const initialStatus: StatusChange = {
+      status: 'active',
+      changedAt: now
+    };
+
     const docRef = await addDoc(collection(db, COLLECTION), {
       ...data,
       inviteCode,
       parentIds: [],
+      status: 'active',
+      enrolledAt: data.enrolledAt || now,
+      statusHistory: [initialStatus],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
@@ -148,5 +163,64 @@ export const studentService = {
 
   async delete(id: string): Promise<void> {
     await deleteDoc(doc(db, COLLECTION, id));
+  },
+
+  // 원생 상태 변경 (재원/휴원/퇴원)
+  async changeStatus(id: string, newStatus: StudentStatus, reason?: string): Promise<void> {
+    const student = await this.getById(id);
+    if (!student) throw new Error('Student not found');
+
+    const statusChange: StatusChange = {
+      status: newStatus,
+      changedAt: new Date().toISOString(),
+      reason
+    };
+
+    const statusHistory = [...(student.statusHistory || []), statusChange];
+
+    await updateDoc(doc(db, COLLECTION, id), {
+      status: newStatus,
+      statusHistory,
+      updatedAt: serverTimestamp()
+    });
+  },
+
+  // 상태별 원생 조회 (실시간)
+  subscribeByStatus(status: StudentStatus, callback: (students: Student[]) => void) {
+    const q = query(
+      collection(db, COLLECTION),
+      where('status', '==', status),
+      orderBy('name', 'asc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const students = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          createdAt: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+          parentIds: data.parentIds || [],
+          status: data.status || 'active',
+          statusHistory: data.statusHistory || []
+        };
+      }) as Student[];
+      callback(students);
+    });
+  },
+
+  // 재원생만 조회
+  async getActiveStudents(): Promise<Student[]> {
+    const q = query(
+      collection(db, COLLECTION),
+      where('status', '==', 'active'),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id,
+      parentIds: doc.data().parentIds || [],
+      status: doc.data().status || 'active'
+    })) as Student[];
   }
 };
