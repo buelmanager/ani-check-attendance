@@ -1,5 +1,8 @@
 import type { Attendance } from './index';
 
+// Attendance 타입 재내보내기
+export type { Attendance };
+
 // 출석 상태 타입
 export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused';
 
