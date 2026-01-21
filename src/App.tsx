@@ -46,6 +46,7 @@ import AdminReports from './pages/admin/AdminReports';
 import AdminAnnouncements from './pages/admin/AdminAnnouncements';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminNotices from './pages/admin/AdminNotices';
+import AdminGuardians from './pages/admin/AdminGuardians';
 import StudentDetail from './pages/admin/StudentDetail';
 
 function AppContent() {
@@ -169,6 +170,11 @@ function AppContent() {
       <Route path="/admin/notices" element={
         <ProtectedRoute>
           <AdminNotices />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/guardians" element={
+        <ProtectedRoute>
+          <AdminGuardians />
         </ProtectedRoute>
       } />
 

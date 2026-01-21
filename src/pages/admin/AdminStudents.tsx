@@ -3,9 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
 import { studentService } from '../../services/studentService';
-import { parentService } from '../../services/parentService';
-import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup } from '../../utils/excelExport';
+import { parentService, RelationType } from '../../services/parentService';
+import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup, readStudentsFromExcel, readParentsFromExcel } from '../../utils/excelExport';
+import { demoStudents } from '../../data/demoStudents';
+import { batchCreateStudents, BatchStudentData, batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData } from '../../lib/firebase';
 import type { Student, StudentStatus, GradeLevel, Parent } from '../../types';
+
+// 보호자 입력 폼 데이터 타입
+interface GuardianFormData {
+  name: string;
+  phone: string;
+  relationType: RelationType;
+}
 
 // 학년 옵션
 const GRADE_OPTIONS: GradeLevel[] = [
@@ -33,34 +42,39 @@ const STATUS_COLORS: Record<StudentStatus, string> = {
 interface FormData {
   name: string;
   phone: string;
-  parentPhone: string;
   birthDate: string;
   gender: 'male' | 'female' | '';
   school: string;
   grade: GradeLevel | '';
   address: string;
-  emergencyContact: string;
   notes: string;
   enrolledAt: string;
+  // 보호자 정보 추가
+  guardians: GuardianFormData[];
 }
+
+const initialGuardian: GuardianFormData = {
+  name: '',
+  phone: '',
+  relationType: 'mother'
+};
 
 const initialFormData: FormData = {
   name: '',
   phone: '',
-  parentPhone: '',
   birthDate: '',
   gender: '',
   school: '',
   grade: '',
   address: '',
-  emergencyContact: '',
   notes: '',
-  enrolledAt: new Date().toISOString().split('T')[0]
+  enrolledAt: new Date().toISOString().split('T')[0],
+  guardians: [{ ...initialGuardian }]
 };
 
 export default function AdminStudents() {
   const navigate = useNavigate();
-  const { students, classes, addStudent, updateStudent, deleteStudent } = useStore();
+  const { students, classes, updateStudent, deleteStudent } = useStore();
   const [showModal, setShowModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -70,6 +84,70 @@ export default function AdminStudents() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // SMS 발송 관련 상태
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsTargets, setSmsTargets] = useState<{ students: boolean; guardians: boolean }>({
+    students: true,
+    guardians: true
+  });
+
+  // 삭제 관련 상태
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<{
+    studentName: string;
+    step: 'parents' | 'student' | 'done';
+  } | null>(null);
+
+  // 일괄 삭제 관련 상태
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{
+    current: number;
+    total: number;
+    currentName: string;
+    deletedCount: number;
+  } | null>(null);
+
+  // 데모 데이터 등록 관련 상태
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoProgress, setDemoProgress] = useState<{
+    current: number;
+    total: number;
+    currentName: string;
+    studentsDone: number;
+    parentsDone: number;
+  } | null>(null);
+
+  // 엑셀 가져오기 관련 상태
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{
+    phase: 'reading' | 'students' | 'parents' | 'done';
+    current: number;
+    total: number;
+    currentName: string;
+    studentsDone: number;
+    parentsDone: number;
+  } | null>(null);
+  const [importResult, setImportResult] = useState<{
+    students: {
+      total: number;
+      success: number;
+      linked: number;
+      created: number;
+      failed: number;
+      errors: string[];
+    };
+    parents: {
+      total: number;
+      success: number;
+      linked: number;
+      created: number;
+      failed: number;
+      errors: string[];
+    };
+  } | null>(null);
 
   // 필터 상태
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'all'>('all');
@@ -161,24 +239,46 @@ export default function AdminStudents() {
 
     setIsSubmitting(true);
     try {
+      // undefined 값은 Firestore에서 지원하지 않으므로 빈 문자열이면 필드를 포함하지 않음
       const studentData = {
         name: formData.name,
-        phone: formData.phone || undefined,
-        parentPhone: formData.parentPhone || undefined,
-        birthDate: formData.birthDate || undefined,
-        gender: formData.gender || undefined,
-        school: formData.school || undefined,
-        grade: formData.grade || undefined,
-        address: formData.address || undefined,
-        emergencyContact: formData.emergencyContact || undefined,
-        notes: formData.notes || undefined,
-        enrolledAt: formData.enrolledAt || undefined
+        ...(formData.phone && { phone: formData.phone }),
+        ...(formData.birthDate && { birthDate: formData.birthDate }),
+        ...(formData.gender && { gender: formData.gender }),
+        ...(formData.school && { school: formData.school }),
+        ...(formData.grade && { grade: formData.grade }),
+        ...(formData.address && { address: formData.address }),
+        ...(formData.notes && { notes: formData.notes }),
+        ...(formData.enrolledAt && { enrolledAt: formData.enrolledAt })
       };
 
       if (editingStudent) {
         await updateStudent(editingStudent, studentData);
       } else {
-        await addStudent(studentData);
+        // 신규 등록: 학생 계정 생성 (전화번호가 있는 경우)
+        const result = await studentService.createWithAccount(studentData);
+        const studentId = result.studentId;
+
+        // 보호자 등록
+        const validGuardians = formData.guardians.filter(g => g.name.trim() && g.phone.trim());
+        for (const guardian of validGuardians) {
+          const parentResult = await parentService.createWithAccount({
+            name: guardian.name,
+            phone: guardian.phone,
+            studentId,
+            relationType: guardian.relationType
+          });
+
+          // 학생에 보호자 ID 연결
+          if (parentResult.parentId) {
+            await studentService.addParent(studentId, parentResult.parentId);
+          }
+        }
+
+        // 결과 알림
+        if (result.error) {
+          alert(`학생이 등록되었지만 계정 생성 중 오류가 발생했습니다: ${result.error}`);
+        }
       }
       closeModal();
     } catch (error) {
@@ -190,13 +290,93 @@ export default function AdminStudents() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('정말 이 학생을 삭제하시겠습니까?')) return;
+    const student = students.find(s => s.id === id);
+    if (!student) return;
+
+    if (!confirm(`정말 "${student.name}" 학생을 삭제하시겠습니까?\n연결된 부모 계정도 함께 삭제됩니다.`)) return;
+
+    setIsDeleting(true);
+    setDeleteProgress({
+      studentName: student.name,
+      step: 'parents'
+    });
 
     try {
+      // 부모 삭제 단계
+      await new Promise(resolve => setTimeout(resolve, 300)); // UI 업데이트를 위한 짧은 딜레이
+
+      setDeleteProgress({
+        studentName: student.name,
+        step: 'student'
+      });
+
       await deleteStudent(id);
+
+      setDeleteProgress({
+        studentName: student.name,
+        step: 'done'
+      });
+
+      // 완료 후 잠시 대기
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
       console.error('Error deleting student:', error);
       alert('삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsDeleting(false);
+      setDeleteProgress(null);
+    }
+  };
+
+  // 일괄 삭제 (Cloud Function 사용)
+  const handleBulkDelete = async () => {
+    if (selectedStudentIds.size === 0) {
+      alert('삭제할 학생을 선택해주세요.');
+      return;
+    }
+
+    const selectedCount = selectedStudentIds.size;
+    if (!confirm(`선택한 ${selectedCount}명의 학생을 삭제하시겠습니까?\n연결된 부모 계정도 함께 삭제됩니다.\n\n※ 이 작업은 되돌릴 수 없습니다.`)) return;
+
+    setIsBulkDeleting(true);
+    setBulkDeleteProgress({
+      current: 0,
+      total: selectedCount,
+      currentName: '서버에서 삭제 처리 중...',
+      deletedCount: 0,
+    });
+
+    const selectedIds = Array.from(selectedStudentIds);
+
+    try {
+      // Cloud Function을 통해 일괄 삭제 (서버에서 처리)
+      const result = await batchDeleteStudents(selectedIds, true);
+
+      // 로컬 store에서도 삭제된 학생 제거 (UI 즉시 반영)
+      for (const studentId of selectedIds) {
+        try {
+          // store의 deleteStudent는 이미 서버에서 삭제됐으므로 로컬만 업데이트
+          await deleteStudent(studentId);
+        } catch {
+          // 이미 삭제된 경우 무시
+        }
+      }
+
+      // 선택 초기화
+      setSelectedStudentIds(new Set());
+
+      // 결과 표시
+      if (result.errors.length > 0) {
+        alert(`일괄 삭제 완료!\n${result.deletedStudents}명의 학생이 삭제되었습니다.\n${result.deletedParents}명의 부모가 삭제되었습니다.\n\n일부 오류 발생: ${result.errors.length}건`);
+      } else {
+        alert(`일괄 삭제 완료!\n${result.deletedStudents}명의 학생이 삭제되었습니다.\n${result.deletedParents}명의 부모가 삭제되었습니다.`);
+      }
+    } catch (error) {
+      console.error('Error in bulk delete:', error);
+      alert('일괄 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsBulkDeleting(false);
+      setBulkDeleteProgress(null);
     }
   };
 
@@ -205,15 +385,14 @@ export default function AdminStudents() {
     setFormData({
       name: student.name,
       phone: student.phone || '',
-      parentPhone: student.parentPhone || '',
       birthDate: student.birthDate || '',
       gender: student.gender || '',
       school: student.school || '',
       grade: student.grade || '',
       address: student.address || '',
-      emergencyContact: student.emergencyContact || '',
       notes: student.notes || '',
-      enrolledAt: student.enrolledAt?.split('T')[0] || ''
+      enrolledAt: student.enrolledAt?.split('T')[0] || '',
+      guardians: [{ ...initialGuardian }]
     });
     setShowModal(true);
   };
@@ -221,7 +400,73 @@ export default function AdminStudents() {
   const closeModal = () => {
     setShowModal(false);
     setEditingStudent(null);
-    setFormData(initialFormData);
+    setFormData({ ...initialFormData, guardians: [{ ...initialGuardian }] });
+  };
+
+  // 보호자 정보 업데이트
+  const updateGuardian = (index: number, field: keyof GuardianFormData, value: string) => {
+    const newGuardians = [...formData.guardians];
+    newGuardians[index] = { ...newGuardians[index], [field]: value };
+    setFormData({ ...formData, guardians: newGuardians });
+  };
+
+  // 학생 선택 토글
+  const toggleStudentSelection = (studentId: string) => {
+    const newSelected = new Set(selectedStudentIds);
+    if (newSelected.has(studentId)) {
+      newSelected.delete(studentId);
+    } else {
+      newSelected.add(studentId);
+    }
+    setSelectedStudentIds(newSelected);
+  };
+
+  // 전체 선택 토글
+  const toggleSelectAll = () => {
+    if (selectedStudentIds.size === filteredStudents.length) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(filteredStudents.map(s => s.id)));
+    }
+  };
+
+  // SMS 발송 모달 열기
+  const openSmsModal = () => {
+    if (selectedStudentIds.size === 0) {
+      alert('로그인 링크를 발송할 학생을 선택해주세요.');
+      return;
+    }
+    setShowSmsModal(true);
+  };
+
+  // SMS 발송 (목업)
+  const handleSendSms = async () => {
+    const selectedStudents = students.filter(s => selectedStudentIds.has(s.id));
+    let studentCount = 0;
+    let guardianCount = 0;
+
+    for (const student of selectedStudents) {
+      if (smsTargets.students && student.phone) {
+        studentCount++;
+      }
+      if (smsTargets.guardians && student.parentIds) {
+        guardianCount += student.parentIds.length;
+      }
+    }
+
+    const totalCount = studentCount + guardianCount;
+    const estimatedCost = totalCount * 8.4; // 알리고 기준
+
+    alert(`[목업] SMS 발송 완료!\n\n` +
+      `발송 대상:\n` +
+      `- 학생: ${studentCount}명\n` +
+      `- 보호자: ${guardianCount}명\n` +
+      `- 총: ${totalCount}건\n\n` +
+      `예상 비용: 약 ${Math.round(estimatedCost)}원\n\n` +
+      `(실제 운영 시 SMS API로 발송됩니다)`);
+
+    setShowSmsModal(false);
+    setSelectedStudentIds(new Set());
   };
 
   // 나이 계산
@@ -236,6 +481,188 @@ export default function AdminStudents() {
     return age;
   };
 
+  // 엑셀 가져오기 처리 (Cloud Function 사용)
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportResult(null);
+    setImportProgress({
+      phase: 'reading',
+      current: 0,
+      total: 0,
+      currentName: '파일 읽는 중...',
+      studentsDone: 0,
+      parentsDone: 0
+    });
+    setShowImportModal(true);
+
+    try {
+      // 학생 데이터 읽기
+      const studentsData = await readStudentsFromExcel(file);
+      // 학부모 데이터 읽기
+      const parentsData = await readParentsFromExcel(file);
+
+      const totalStudents = studentsData.length;
+      const totalParents = parentsData.length;
+
+      // 진행 상황 업데이트 - 서버로 전송
+      setImportProgress({
+        phase: 'students',
+        current: 0,
+        total: totalStudents,
+        currentName: '서버에서 처리 중...',
+        studentsDone: 0,
+        parentsDone: 0
+      });
+
+      // 학생별 부모 정보 매핑 (엑셀에서 부모 정보가 있는 경우)
+      const studentParentMap: Record<string, { name: string; phone: string }[]> = {};
+      for (const parentData of parentsData) {
+        if (parentData.childNames) {
+          for (const childName of parentData.childNames) {
+            if (!studentParentMap[childName]) {
+              studentParentMap[childName] = [];
+            }
+            studentParentMap[childName].push({
+              name: parentData.name,
+              phone: parentData.phone || ''
+            });
+          }
+        }
+      }
+
+      // RestoreStudentData 형식으로 변환
+      const restoreStudents: RestoreStudentData[] = studentsData.map(s => ({
+        name: s.name,
+        phone: s.phone || '',
+        birthDate: s.birthDate,
+        gender: s.gender as 'male' | 'female' | undefined,
+        school: s.school,
+        grade: s.grade,
+        address: s.address,
+        notes: s.notes,
+        status: s.status,
+        inviteCode: s.inviteCode,
+        parentIds: []
+      }));
+
+      // RestoreParentData 형식으로 변환 (고유한 부모만)
+      const uniqueParents = new Map<string, RestoreParentData>();
+      for (const parentData of parentsData) {
+        const key = parentData.phone || parentData.name;
+        if (!uniqueParents.has(key)) {
+          uniqueParents.set(key, {
+            id: key, // 고유 키 사용
+            name: parentData.name,
+            phone: parentData.phone || ''
+          });
+        }
+      }
+      const restoreParents: RestoreParentData[] = Array.from(uniqueParents.values());
+
+      // Cloud Function 호출
+      const result = await batchRestoreStudents(restoreStudents, restoreParents);
+
+      // 완료
+      setImportProgress({
+        phase: 'done',
+        current: totalStudents,
+        total: totalStudents,
+        currentName: '완료!',
+        studentsDone: result.createdStudents,
+        parentsDone: result.createdParents
+      });
+
+      // 결과 설정
+      setImportResult({
+        students: {
+          total: totalStudents,
+          success: result.createdStudents,
+          linked: 0,
+          created: result.createdAuthUsers,
+          failed: result.errors.filter(e => e.type === 'student').length,
+          errors: result.errors.filter(e => e.type === 'student').map(e => `${e.name}: ${e.error}`)
+        },
+        parents: {
+          total: totalParents,
+          success: result.createdParents,
+          linked: 0,
+          created: result.createdAuthUsers,
+          failed: result.errors.filter(e => e.type === 'parent').length,
+          errors: result.errors.filter(e => e.type === 'parent').map(e => `${e.name}: ${e.error}`)
+        }
+      });
+    } catch (error) {
+      console.error('Error importing data:', error);
+      alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
+      setShowImportModal(false);
+    } finally {
+      setIsImporting(false);
+      setImportProgress(null);
+      // 파일 input 초기화
+      e.target.value = '';
+    }
+  };
+
+  // 데모 데이터 등록 (Cloud Function 사용)
+  const handleLoadDemoData = async () => {
+    if (!confirm('50명의 데모 학생 데이터를 등록하시겠습니까?\n각 학생당 부모 계정도 함께 생성됩니다.\n\n※ 서버에서 처리되므로 약 1-2분 소요됩니다.')) return;
+
+    setIsDemoLoading(true);
+    setDemoProgress({
+      current: 0,
+      total: demoStudents.length,
+      currentName: '서버에서 처리 중...',
+      studentsDone: 0,
+      parentsDone: 0,
+    });
+
+    try {
+      // 데모 데이터를 BatchStudentData 형식으로 변환
+      const batchData: BatchStudentData[] = demoStudents.map(demo => ({
+        name: demo.name,
+        phone: demo.phone,
+        birthDate: demo.birthDate,
+        gender: demo.gender,
+        school: demo.school,
+        grade: demo.grade,
+        address: demo.address,
+        notes: demo.notes,
+        parent: {
+          name: demo.parent.name,
+          phone: demo.parent.phone,
+          relationType: demo.parent.relationType,
+        }
+      }));
+
+      // Cloud Function 호출
+      const result = await batchCreateStudents(batchData);
+
+      setDemoProgress({
+        current: result.totalStudents,
+        total: result.totalStudents,
+        currentName: '완료!',
+        studentsDone: result.createdStudents,
+        parentsDone: result.createdParents,
+      });
+
+      if (result.errors.length > 0) {
+        console.warn('Batch create errors:', result.errors);
+        alert(`데모 데이터 등록 완료! (일부 오류 발생)\n학생: ${result.createdStudents}명\n부모: ${result.createdParents}명\n오류: ${result.errors.length}건`);
+      } else {
+        alert(`데모 데이터 등록 완료!\n학생: ${result.createdStudents}명\n부모: ${result.createdParents}명`);
+      }
+    } catch (error) {
+      console.error('Error loading demo data:', error);
+      alert('데모 데이터 등록 중 오류가 발생했습니다.');
+    } finally {
+      setIsDemoLoading(false);
+      setDemoProgress(null);
+    }
+  };
+
   return (
     <AdminLayout>
       {/* Header */}
@@ -245,6 +672,39 @@ export default function AdminStudents() {
           <p className="text-gray-500">{students.length}명의 학생</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* SMS 발송 버튼 */}
+          <button
+            onClick={openSmsModal}
+            className={`btn-outline flex items-center justify-center gap-2 px-4 py-2 ${
+              selectedStudentIds.size > 0 ? 'border-blue-500 text-blue-600 hover:bg-blue-50' : ''
+            }`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            로그인 링크 발송
+            {selectedStudentIds.size > 0 && (
+              <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full">
+                {selectedStudentIds.size}
+              </span>
+            )}
+          </button>
+          {/* 일괄 삭제 버튼 */}
+          {selectedStudentIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+              className="btn-outline flex items-center justify-center gap-2 px-4 py-2 border-red-500 text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              선택 삭제
+              <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                {selectedStudentIds.size}
+              </span>
+            </button>
+          )}
           {/* 엑셀 내보내기 드롭다운 */}
           <div className="relative group">
             <button
@@ -253,7 +713,7 @@ export default function AdminStudents() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              엑셀 내보내기
+              엑셀
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -303,12 +763,41 @@ export default function AdminStudents() {
               <div className="border-t border-gray-100">
                 <button
                   onClick={() => exportFullBackup(students, classes, parents)}
-                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2"
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
                   <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                   </svg>
                   전체 백업 (학생+학부모)
+                </button>
+              </div>
+              <div className="border-t border-gray-100">
+                <label
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
+                >
+                  <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  {isImporting ? '가져오는 중...' : '엑셀에서 가져오기'}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportExcel}
+                    className="hidden"
+                    disabled={isImporting}
+                  />
+                </label>
+              </div>
+              <div className="border-t border-gray-100">
+                <button
+                  onClick={handleLoadDemoData}
+                  disabled={isDemoLoading}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2 disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  {isDemoLoading ? '등록 중...' : '데모 데이터 50명 등록'}
                 </button>
               </div>
             </div>
@@ -401,6 +890,14 @@ export default function AdminStudents() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-4 text-left">
+                  <input
+                    type="checkbox"
+                    checked={selectedStudentIds.size === filteredStudents.length && filteredStudents.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                  />
+                </th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">이름</th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">상태</th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">학년</th>
@@ -419,6 +916,14 @@ export default function AdminStudents() {
 
                 return (
                   <tr key={student.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedStudentIds.has(student.id)}
+                        onChange={() => toggleStudentSelection(student.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <button
                         onClick={() => navigate(`/admin/students/${student.id}`)}
@@ -566,13 +1071,16 @@ export default function AdminStudents() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500 mb-2 block">이름 *</label>
+                <label className="text-sm text-gray-500 mb-2 block">
+                  이름 <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="학생 이름"
                   className="input-field"
+                  required
                 />
               </div>
 
@@ -651,28 +1159,6 @@ export default function AdminStudents() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500 mb-2 block">보호자 연락처</label>
-                <input
-                  type="tel"
-                  value={formData.parentPhone}
-                  onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
-                  placeholder="010-0000-0000"
-                  className="input-field"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-500 mb-2 block">긴급연락처</label>
-                <input
-                  type="tel"
-                  value={formData.emergencyContact}
-                  onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
-                  placeholder="010-0000-0000"
-                  className="input-field"
-                />
-              </div>
-
-              <div>
                 <label className="text-sm text-gray-500 mb-2 block">주소</label>
                 <input
                   type="text"
@@ -682,6 +1168,60 @@ export default function AdminStudents() {
                   className="input-field"
                 />
               </div>
+
+              {/* 보호자 정보 - 신규 등록 시에만 표시 (1명만) */}
+              {!editingStudent && (
+                <>
+                  <div className="md:col-span-2 mt-4">
+                    <h3 className="text-sm font-semibold text-gray-700">보호자 정보</h3>
+                    <p className="text-xs text-gray-500 mt-1">보호자 정보를 입력하면 자동으로 계정이 생성됩니다.</p>
+                  </div>
+
+                  <div className="md:col-span-2 bg-gray-50 rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">이름</label>
+                        <input
+                          type="text"
+                          value={formData.guardians[0]?.name || ''}
+                          onChange={(e) => updateGuardian(0, 'name', e.target.value)}
+                          placeholder="보호자 이름"
+                          className="input-field text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">연락처</label>
+                        <input
+                          type="tel"
+                          value={formData.guardians[0]?.phone || ''}
+                          onChange={(e) => updateGuardian(0, 'phone', e.target.value)}
+                          placeholder="010-0000-0000"
+                          className="input-field text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">관계</label>
+                        <div className="flex gap-2">
+                          {(['father', 'mother', 'guardian'] as RelationType[]).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => updateGuardian(0, 'relationType', type)}
+                              className={`flex-1 py-2 text-xs rounded-lg transition-colors ${
+                                formData.guardians[0]?.relationType === type
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              {type === 'father' ? '부' : type === 'mother' ? '모' : '보호자'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* 메모 */}
               <div className="md:col-span-2 mt-4">
@@ -699,13 +1239,17 @@ export default function AdminStudents() {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <p className="text-xs text-gray-400 mt-4">
+              <span className="text-red-500">*</span> 필수 입력 항목
+            </p>
+
+            <div className="flex gap-3 mt-4">
               <button onClick={closeModal} className="flex-1 btn-outline">
                 취소
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !formData.name.trim()}
                 className="flex-1 btn-accent disabled:opacity-50"
               >
                 {isSubmitting ? '저장 중...' : editingStudent ? '수정' : '추가'}
@@ -875,6 +1419,435 @@ export default function AdminStudents() {
             >
               닫기
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* SMS 발송 모달 */}
+      {showSmsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowSmsModal(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">로그인 링크 발송</h2>
+            <p className="text-gray-500 mb-6">
+              선택한 <span className="font-semibold text-gray-900">{selectedStudentIds.size}명</span>의 학생에게 로그인 링크를 발송합니다.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-500 mb-2 block">발송 대상</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={smsTargets.students}
+                      onChange={(e) => setSmsTargets({ ...smsTargets, students: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-gray-700 font-medium">학생 본인</span>
+                      <p className="text-xs text-gray-500">학생 핸드폰으로 발송</p>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={smsTargets.guardians}
+                      onChange={(e) => setSmsTargets({ ...smsTargets, guardians: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-gray-700 font-medium">보호자</span>
+                      <p className="text-xs text-gray-500">등록된 보호자에게 발송</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 rounded-xl p-4">
+                <p className="text-sm text-blue-700">
+                  <span className="font-semibold">[테스트 모드]</span><br />
+                  실제 SMS는 발송되지 않습니다.<br />
+                  운영 환경에서는 알리고 API를 통해 발송됩니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowSmsModal(false)}
+                className="flex-1 btn-outline"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSendSms}
+                disabled={!smsTargets.students && !smsTargets.guardians}
+                className="flex-1 btn-accent disabled:opacity-50"
+              >
+                발송
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 엑셀 가져오기 진행 상황 모달 */}
+      {showImportModal && isImporting && importProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">데이터 복원 중...</h2>
+            <p className="text-gray-500 mb-6">
+              잠시만 기다려주세요. 창을 닫지 마세요.
+            </p>
+
+            <div className="space-y-4">
+              {/* 진행률 바 */}
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600">
+                    {importProgress.phase === 'reading' && '파일 읽는 중...'}
+                    {importProgress.phase === 'students' && `학생 처리 중 (${importProgress.current}/${importProgress.total})`}
+                    {importProgress.phase === 'parents' && `부모 등록 중 (${importProgress.current}/${importProgress.total})`}
+                    {importProgress.phase === 'done' && '완료!'}
+                  </span>
+                  <span className="text-gray-500">
+                    {importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                    style={{ width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* 현재 처리 중인 항목 */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">현재 처리 중:</p>
+                <p className="font-medium text-gray-900 truncate">{importProgress.currentName}</p>
+              </div>
+
+              {/* 완료된 수 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{importProgress.studentsDone}</p>
+                  <p className="text-xs text-gray-500">학생 완료</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-purple-600">{importProgress.parentsDone}</p>
+                  <p className="text-xs text-gray-500">부모 완료</p>
+                </div>
+              </div>
+
+              {/* 로딩 애니메이션 */}
+              <div className="flex justify-center">
+                <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 엑셀 가져오기 결과 모달 */}
+      {showImportModal && !isImporting && importResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowImportModal(false)} />
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">가져오기 완료</h2>
+            <p className="text-gray-500 mb-6">
+              엑셀 파일에서 데이터를 가져왔습니다.
+            </p>
+
+            <div className="space-y-6">
+              {/* 학생 결과 */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  학생 ({importResult.students.total}명)
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                    <p className="text-lg font-bold text-green-600">{importResult.students.success}</p>
+                    <p className="text-xs text-gray-500">성공</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <p className="text-lg font-bold text-blue-600">{importResult.students.linked}</p>
+                    <p className="text-xs text-gray-500">계정연결</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-3 text-center">
+                    <p className="text-lg font-bold text-purple-600">{importResult.students.created}</p>
+                    <p className="text-xs text-gray-500">계정생성</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-3 text-center">
+                    <p className="text-lg font-bold text-red-600">{importResult.students.failed}</p>
+                    <p className="text-xs text-gray-500">실패</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 학부모 결과 */}
+              {importResult.parents.total > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    학부모 ({importResult.parents.total}명)
+                  </h3>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <p className="text-lg font-bold text-green-600">{importResult.parents.success}</p>
+                      <p className="text-xs text-gray-500">성공</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <p className="text-lg font-bold text-blue-600">{importResult.parents.linked}</p>
+                      <p className="text-xs text-gray-500">계정연결</p>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-3 text-center">
+                      <p className="text-lg font-bold text-purple-600">{importResult.parents.created}</p>
+                      <p className="text-xs text-gray-500">계정생성</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-3 text-center">
+                      <p className="text-lg font-bold text-red-600">{importResult.parents.failed}</p>
+                      <p className="text-xs text-gray-500">실패</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 에러 목록 */}
+              {(importResult.students.errors.length > 0 || importResult.parents.errors.length > 0) && (
+                <div className="bg-yellow-50 rounded-xl p-4">
+                  <p className="text-sm font-medium text-yellow-800 mb-2">
+                    주의사항 ({importResult.students.errors.length + importResult.parents.errors.length}건)
+                  </p>
+                  <div className="max-h-32 overflow-y-auto">
+                    <ul className="text-xs text-yellow-700 space-y-1">
+                      {[...importResult.students.errors, ...importResult.parents.errors].slice(0, 10).map((error, index) => (
+                        <li key={index}>• {error}</li>
+                      ))}
+                      {(importResult.students.errors.length + importResult.parents.errors.length) > 10 && (
+                        <li className="text-yellow-600">
+                          ... 외 {importResult.students.errors.length + importResult.parents.errors.length - 10}건
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* 안내 */}
+              <div className="bg-blue-50 rounded-xl p-4">
+                <p className="text-sm text-blue-700">
+                  <span className="font-semibold">안내:</span> 기존 계정이 있는 경우 자동으로 연결되고, 없는 경우 새 계정이 생성됩니다. 학부모-자녀 관계도 자동으로 복원됩니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportResult(null);
+                }}
+                className="w-full btn-primary"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 삭제 진행 모달 */}
+      {isDeleting && deleteProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">삭제 중...</h2>
+            <p className="text-gray-500 mb-6">
+              "{deleteProgress.studentName}" 학생을 삭제하고 있습니다.
+            </p>
+
+            <div className="space-y-4">
+              {/* 단계 표시 */}
+              <div className="space-y-3">
+                <div className={`flex items-center gap-3 p-3 rounded-lg ${
+                  deleteProgress.step === 'parents' ? 'bg-red-50' :
+                  deleteProgress.step === 'student' || deleteProgress.step === 'done' ? 'bg-green-50' : 'bg-gray-50'
+                }`}>
+                  {deleteProgress.step === 'parents' ? (
+                    <svg className="animate-spin h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                  <span className={`text-sm ${
+                    deleteProgress.step === 'parents' ? 'text-red-700 font-medium' : 'text-green-700'
+                  }`}>
+                    부모 계정 삭제
+                  </span>
+                </div>
+
+                <div className={`flex items-center gap-3 p-3 rounded-lg ${
+                  deleteProgress.step === 'student' ? 'bg-red-50' :
+                  deleteProgress.step === 'done' ? 'bg-green-50' : 'bg-gray-50'
+                }`}>
+                  {deleteProgress.step === 'student' ? (
+                    <svg className="animate-spin h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : deleteProgress.step === 'done' ? (
+                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+                  )}
+                  <span className={`text-sm ${
+                    deleteProgress.step === 'student' ? 'text-red-700 font-medium' :
+                    deleteProgress.step === 'done' ? 'text-green-700' : 'text-gray-400'
+                  }`}>
+                    학생 정보 삭제
+                  </span>
+                </div>
+              </div>
+
+              {/* 완료 메시지 */}
+              {deleteProgress.step === 'done' && (
+                <div className="bg-green-100 rounded-lg p-4 text-center">
+                  <svg className="w-8 h-8 text-green-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <p className="text-green-700 font-medium">삭제 완료!</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 데모 데이터 등록 진행 모달 */}
+      {isDemoLoading && demoProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">데모 데이터 등록 중...</h2>
+            <p className="text-gray-500 mb-6">
+              잠시만 기다려주세요. 창을 닫지 마세요.
+            </p>
+
+            <div className="space-y-4">
+              {/* 진행률 바 */}
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600">
+                    학생 등록 중 ({demoProgress.current}/{demoProgress.total})
+                  </span>
+                  <span className="text-gray-500">
+                    {Math.round((demoProgress.current / demoProgress.total) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-pink-500 h-3 rounded-full transition-all duration-300"
+                    style={{ width: `${(demoProgress.current / demoProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* 현재 처리 중인 항목 */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">현재 처리 중:</p>
+                <p className="font-medium text-gray-900 truncate">{demoProgress.currentName}</p>
+              </div>
+
+              {/* 완료된 수 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-pink-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-pink-600">{demoProgress.studentsDone}</p>
+                  <p className="text-xs text-gray-500">학생 완료</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-purple-600">{demoProgress.parentsDone}</p>
+                  <p className="text-xs text-gray-500">부모 완료</p>
+                </div>
+              </div>
+
+              {/* 로딩 애니메이션 */}
+              <div className="flex justify-center">
+                <svg className="animate-spin h-8 w-8 text-pink-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 일괄 삭제 진행 모달 */}
+      {isBulkDeleting && bulkDeleteProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">일괄 삭제 중...</h2>
+            <p className="text-gray-500 mb-6">
+              잠시만 기다려주세요. 창을 닫지 마세요.
+            </p>
+
+            <div className="space-y-4">
+              {/* 진행률 바 */}
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600">
+                    삭제 중 ({bulkDeleteProgress.current}/{bulkDeleteProgress.total})
+                  </span>
+                  <span className="text-gray-500">
+                    {Math.round((bulkDeleteProgress.current / bulkDeleteProgress.total) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-red-500 h-3 rounded-full transition-all duration-300"
+                    style={{ width: `${(bulkDeleteProgress.current / bulkDeleteProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* 현재 처리 중인 항목 */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">현재 처리 중:</p>
+                <p className="font-medium text-gray-900 truncate">{bulkDeleteProgress.currentName}</p>
+              </div>
+
+              {/* 삭제된 수 */}
+              <div className="bg-red-50 rounded-lg p-4 text-center">
+                <p className="text-3xl font-bold text-red-600">{bulkDeleteProgress.deletedCount}</p>
+                <p className="text-sm text-gray-500">삭제 완료</p>
+              </div>
+
+              {/* 로딩 애니메이션 */}
+              <div className="flex justify-center">
+                <svg className="animate-spin h-8 w-8 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
       )}

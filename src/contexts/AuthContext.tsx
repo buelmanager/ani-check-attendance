@@ -10,9 +10,10 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { studentService } from '../services/studentService';
 import { parentService } from '../services/parentService';
+import { authService } from '../services/authService';
 import type { UserRole, Student, Parent } from '../types';
 
-// 핸드폰 번호를 이메일 형식으로 변환 (Firebase Auth는 이메일 형식 필요)
+// 레거시 호환: 핸드폰 번호를 이메일 형식으로 변환 (Firebase Auth는 이메일 형식 필요)
 const phoneToEmail = (phone: string): string => {
   const cleanPhone = phone.replace(/[^0-9]/g, '');
   return `${cleanPhone}@phone.local`;
@@ -22,6 +23,15 @@ interface AdminData {
   email: string;
   name: string;
   role: 'admin' | 'superadmin';
+}
+
+// SMS 인증번호 요청 결과 타입
+interface VerificationResult {
+  success: boolean;
+  mockCode?: string;
+  error?: string;
+  userType?: 'student' | 'guardian';
+  userName?: string;
 }
 
 interface AuthContextType {
@@ -42,6 +52,9 @@ interface AuthContextType {
   registerStudent: (phone: string, password: string, name: string, inviteCode: string) => Promise<void>;
   registerParent: (phone: string, password: string, name: string, inviteCode: string) => Promise<void>;
   addChildToParent: (inviteCode: string) => Promise<void>;
+  // SMS 인증 관련 메서드 추가
+  requestVerificationCode: (phone: string) => Promise<VerificationResult>;
+  loginWithVerificationCode: (phone: string, code: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -264,6 +277,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // SMS 인증번호 요청
+  const requestVerificationCode = async (phone: string): Promise<VerificationResult> => {
+    return authService.requestVerificationCode(phone);
+  };
+
+  // SMS 인증번호로 로그인
+  const loginWithVerificationCode = async (phone: string, code: string): Promise<{ success: boolean; error?: string }> => {
+    const result = await authService.verifyAndLogin(phone, code);
+    return result;
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -282,7 +306,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       registerStudent,
       registerParent,
-      addChildToParent
+      addChildToParent,
+      requestVerificationCode,
+      loginWithVerificationCode
     }}>
       {children}
     </AuthContext.Provider>

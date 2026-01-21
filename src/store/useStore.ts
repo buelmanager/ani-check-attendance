@@ -117,7 +117,8 @@ export const useStore = create<AppState>()(
 
       deleteStudent: async (id) => {
         try {
-          await studentService.delete(id);
+          // 부모 계정도 함께 삭제 (deleteParents: true)
+          await studentService.delete(id, { deleteParents: true });
           set((state) => ({
             students: state.students.filter(s => s.id !== id)
           }));

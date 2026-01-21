@@ -200,14 +200,20 @@ export default function StudentDetail() {
     setIsSubmitting(true);
     try {
       if (editingConsultation) {
-        await consultationService.update(editingConsultation.id, {
-          ...consultationForm,
-          result: consultationForm.result || undefined,
-          nextAction: consultationForm.nextAction || undefined,
-          nextDate: consultationForm.nextDate || undefined
-        });
+        // undefined 값 제외 (Firestore에서 지원하지 않음)
+        const updateData = {
+          type: consultationForm.type,
+          category: consultationForm.category,
+          title: consultationForm.title,
+          content: consultationForm.content,
+          ...(consultationForm.result && { result: consultationForm.result }),
+          ...(consultationForm.nextAction && { nextAction: consultationForm.nextAction }),
+          ...(consultationForm.nextDate && { nextDate: consultationForm.nextDate })
+        };
+        await consultationService.update(editingConsultation.id, updateData);
       } else {
-        await consultationService.create({
+        // undefined 값 제외 (Firestore에서 지원하지 않음)
+        const createData = {
           studentId: student.id,
           studentName: student.name,
           counselorId: 'admin', // TODO: 실제 로그인한 관리자 ID
@@ -216,11 +222,12 @@ export default function StudentDetail() {
           category: consultationForm.category,
           title: consultationForm.title,
           content: consultationForm.content,
-          result: consultationForm.result || undefined,
-          nextAction: consultationForm.nextAction || undefined,
-          nextDate: consultationForm.nextDate || undefined,
-          isCompleted: false
-        });
+          isCompleted: false,
+          ...(consultationForm.result && { result: consultationForm.result }),
+          ...(consultationForm.nextAction && { nextAction: consultationForm.nextAction }),
+          ...(consultationForm.nextDate && { nextDate: consultationForm.nextDate })
+        };
+        await consultationService.create(createData);
       }
       setShowConsultationModal(false);
       setConsultationForm(initialConsultationForm);

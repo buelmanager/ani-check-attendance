@@ -6,7 +6,6 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  orderBy,
   where,
   onSnapshot,
   serverTimestamp,
@@ -21,10 +20,10 @@ const COLLECTION = 'notifications';
 export const notificationService = {
   // 특정 사용자의 알림 구독
   subscribeForUser(userId: string, callback: (notifications: Notification[]) => void) {
+    // 복합 인덱스 없이 쿼리하고 클라이언트에서 정렬
     const q = query(
       collection(db, COLLECTION),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', userId)
     );
     return onSnapshot(q, (snapshot) => {
       const notifications = snapshot.docs.map(doc => ({
@@ -32,6 +31,8 @@ export const notificationService = {
         id: doc.id,
         createdAt: (doc.data().createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString()
       })) as Notification[];
+      // 클라이언트에서 최신순 정렬
+      notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       callback(notifications);
     }, (error) => {
       console.error('Notifications subscription error:', error);
@@ -39,16 +40,19 @@ export const notificationService = {
   },
 
   async getForUser(userId: string): Promise<Notification[]> {
+    // 복합 인덱스 없이 쿼리하고 클라이언트에서 정렬
     const q = query(
       collection(db, COLLECTION),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', userId)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
+    const notifications = snapshot.docs.map(doc => ({
       ...doc.data(),
-      id: doc.id
+      id: doc.id,
+      createdAt: (doc.data().createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString()
     })) as Notification[];
+    // 클라이언트에서 최신순 정렬
+    return notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   async getUnreadCount(userId: string): Promise<number> {

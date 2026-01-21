@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
 import TimePicker, { CompactTimePicker } from '../../components/TimePicker';
 import { exportClassStudents } from '../../utils/excelExport';
+import type { Class } from '../../types';
 
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 
@@ -104,7 +105,10 @@ export default function AdminClasses() {
   // 학생 모달 열기
   const openStudentModal = (classId: string) => {
     const cls = classes.find(c => c.id === classId);
-    setPendingStudentIds(cls?.studentIds || []);
+    // 존재하는 학생만 선택 목록에 포함
+    const studentIdSet = new Set(students.map(s => s.id));
+    const validStudentIds = (cls?.studentIds || []).filter(id => studentIdSet.has(id));
+    setPendingStudentIds(validStudentIds);
     setStudentSearch('');
     setShowStudentModal(classId);
   };
@@ -157,6 +161,12 @@ export default function AdminClasses() {
   // 선택된 학생 수
   const selectedCount = pendingStudentIds.length;
   const isAllSelected = filteredStudents.length > 0 && filteredStudents.every(s => pendingStudentIds.includes(s.id));
+
+  // 클래스의 실제 학생 수 계산 (존재하는 학생만 카운트)
+  const getValidStudentCount = useCallback((cls: Class) => {
+    const studentIdSet = new Set(students.map(s => s.id));
+    return (cls.studentIds || []).filter(id => studentIdSet.has(id)).length;
+  }, [students]);
 
   return (
     <AdminLayout>
@@ -224,7 +234,7 @@ export default function AdminClasses() {
                       onClick={() => openStudentModal(cls.id)}
                       className="px-3 py-1 bg-accent/20 text-accent rounded-lg text-sm hover:bg-accent/30"
                     >
-                      {cls.studentIds.length}명
+                      {getValidStudentCount(cls)}명
                     </button>
                   </td>
                   <td className="px-6 py-4">
