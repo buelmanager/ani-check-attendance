@@ -1,4 +1,5 @@
 import type { AlertStudent } from '../../types/statistics';
+import { AlertCircleIcon, AlertTriangleIcon, ClockIcon, TrendingDownIcon } from './Icons';
 
 interface AlertStudentCardProps {
   student: AlertStudent;
@@ -7,25 +8,25 @@ interface AlertStudentCardProps {
 
 const alertTypeConfig = {
   consecutive_absent: {
-    icon: '🚨',
+    icon: <AlertCircleIcon size={24} className="text-red-500" />,
     color: 'text-red-600',
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200'
   },
   low_attendance: {
-    icon: '⚠️',
+    icon: <AlertTriangleIcon size={24} className="text-orange-500" />,
     color: 'text-orange-600',
     bgColor: 'bg-orange-50',
     borderColor: 'border-orange-200'
   },
   frequent_late: {
-    icon: '⏰',
+    icon: <ClockIcon size={24} className="text-yellow-500" />,
     color: 'text-yellow-600',
     bgColor: 'bg-yellow-50',
     borderColor: 'border-yellow-200'
   },
   pattern_change: {
-    icon: '📉',
+    icon: <TrendingDownIcon size={24} className="text-purple-500" />,
     color: 'text-purple-600',
     bgColor: 'bg-purple-50',
     borderColor: 'border-purple-200'
@@ -43,7 +44,7 @@ export default function AlertStudentCard({ student, onClick }: AlertStudentCardP
       }`}
     >
       <div className="flex items-start gap-3">
-        <span className="text-2xl">{config.icon}</span>
+        <div className="flex-shrink-0">{config.icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-semibold text-gray-900">{student.studentName}</span>

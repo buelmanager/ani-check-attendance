@@ -4,6 +4,7 @@ import type { Attendance } from '../../types';
 import AttendanceGauge from './AttendanceGauge';
 import TrendChart from './TrendChart';
 import { statisticsService } from '../../services/statisticsService';
+import { XIcon, TrophyIcon, AlertTriangleIcon } from './Icons';
 
 interface ClassReportCardProps {
   classStats: ClassAttendanceStats;
@@ -62,9 +63,7 @@ export default function ClassReportCard({
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <XIcon className="text-gray-500" size={20} />
           </button>
         </div>
 
@@ -186,7 +185,8 @@ export default function ClassReportCard({
             {classStats.topStudents && classStats.topStudents.length > 0 && (
               <div className="bg-green-50 rounded-xl p-4">
                 <h4 className="text-sm font-semibold text-green-800 mb-3 flex items-center gap-2">
-                  🏆 출석 우수 학생
+                  <TrophyIcon size={16} className="text-yellow-500" />
+                  출석 우수 학생
                 </h4>
                 <div className="space-y-2">
                   {classStats.topStudents.slice(0, 5).map((student: StudentAttendanceStats, i: number) => (
@@ -219,7 +219,8 @@ export default function ClassReportCard({
             {classStats.bottomStudents && classStats.bottomStudents.length > 0 && (
               <div className="bg-red-50 rounded-xl p-4">
                 <h4 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-2">
-                  ⚠️ 관리 필요 학생
+                  <AlertTriangleIcon size={16} className="text-red-500" />
+                  관리 필요 학생
                 </h4>
                 <div className="space-y-2">
                   {classStats.bottomStudents.slice(0, 5).map((student: StudentAttendanceStats) => (

@@ -15,7 +15,20 @@ import {
   ComparisonCard,
   WeekdayHeatmap,
   StudentReportCard,
-  ClassReportCard
+  ClassReportCard,
+  ChartBarIcon,
+  UserIcon,
+  UsersIcon,
+  TrendingUpIcon,
+  TrendingDownIcon,
+  SearchIcon,
+  AlertTriangleIcon,
+  TrophyIcon,
+  AlertCircleIcon,
+  CalendarIcon,
+  ClockIcon,
+  CalendarDaysIcon,
+  BarChart2Icon
 } from '../../components/statistics';
 import type {
   PeriodType,
@@ -261,12 +274,12 @@ export default function AdminReports() {
   }, [studentStats]);
 
   // 탭 목록
-  const tabs: { id: TabType; label: string; icon: string }[] = [
-    { id: 'overview', label: '전체 현황', icon: '📊' },
-    { id: 'students', label: '원생별', icon: '👤' },
-    { id: 'classes', label: '반별', icon: '👥' },
-    { id: 'patterns', label: '패턴 분석', icon: '📈' },
-    { id: 'analysis', label: '심층 분석', icon: '🔍' }
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: 'overview', label: '전체 현황', icon: <ChartBarIcon size={16} /> },
+    { id: 'students', label: '원생별', icon: <UserIcon size={16} /> },
+    { id: 'classes', label: '반별', icon: <UsersIcon size={16} /> },
+    { id: 'patterns', label: '패턴 분석', icon: <TrendingUpIcon size={16} /> },
+    { id: 'analysis', label: '심층 분석', icon: <SearchIcon size={16} /> }
   ];
 
   // 기간 옵션
@@ -283,7 +296,10 @@ export default function AdminReports() {
     <AdminLayout>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">📊 출석 통계 대시보드</h1>
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <ChartBarIcon size={24} className="text-indigo-500" />
+          출석 통계 대시보드
+        </h1>
         <p className="text-gray-500">상세한 출석 데이터를 분석하고 인사이트를 얻으세요</p>
       </div>
 
@@ -299,7 +315,7 @@ export default function AdminReports() {
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            <span>{tab.icon}</span>
+            {tab.icon}
             {tab.label}
           </button>
         ))}
@@ -408,7 +424,10 @@ export default function AdminReports() {
 
           {/* Calendar Heatmap */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">📅 출석 현황 캘린더</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <CalendarIcon size={18} className="text-indigo-500" />
+              출석 현황 캘린더
+            </h3>
             <CalendarHeatmap
               data={calendarData}
               startDate={new Date(dateRange.start)}
@@ -459,7 +478,10 @@ export default function AdminReports() {
             {alertStudents.length > 0 && (
               <div className="card">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">⚠️ 주의 필요 학생</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <AlertTriangleIcon size={18} className="text-red-500" />
+                    주의 필요 학생
+                  </h3>
                   <span className="text-sm text-red-500 font-medium">{alertStudents.length}명</span>
                 </div>
                 <div className="space-y-3">
@@ -480,7 +502,8 @@ export default function AdminReports() {
             {/* Top Students */}
             <div className="card">
               <RankingTable
-                title="🏆 출석 우수 학생 TOP 5"
+                title="출석 우수 학생 TOP 5"
+                icon={<TrophyIcon size={18} className="text-yellow-500" />}
                 items={studentStats.slice(0, 5).map((s, i) => ({
                   id: s.studentId,
                   rank: s.rank || i + 1,
@@ -716,33 +739,40 @@ export default function AdminReports() {
         <div className="space-y-6">
           {/* Pattern Insights */}
           {patterns && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="card bg-gradient-to-br from-green-50 to-emerald-50">
-                <h4 className="text-sm text-gray-500 mb-2">📈 출석 최고 요일</h4>
+                <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                  <TrendingUpIcon size={14} className="text-green-500" />
+                  출석 최고 요일
+                </h4>
                 <p className="text-2xl font-bold text-green-600">{patterns.bestDay.dayName}요일</p>
                 <p className="text-sm text-green-700">{patterns.bestDay.rate.toFixed(1)}% 출석률</p>
               </div>
               <div className="card bg-gradient-to-br from-red-50 to-rose-50">
-                <h4 className="text-sm text-gray-500 mb-2">📉 출석 저조 요일</h4>
+                <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                  <TrendingDownIcon size={14} className="text-red-500" />
+                  출석 저조 요일
+                </h4>
                 <p className="text-2xl font-bold text-red-600">{patterns.worstDay.dayName}요일</p>
                 <p className="text-sm text-red-700">{patterns.worstDay.rate.toFixed(1)}% 출석률</p>
               </div>
               <div className="card bg-gradient-to-br from-indigo-50 to-purple-50">
-                <h4 className="text-sm text-gray-500 mb-2">⏰ 출석 집중 시간</h4>
+                <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                  <ClockIcon size={14} className="text-indigo-500" />
+                  출석 집중 시간
+                </h4>
                 <p className="text-2xl font-bold text-indigo-600">{patterns.peakHour.hour}시</p>
                 <p className="text-sm text-indigo-700">{patterns.peakHour.count}건 체크인</p>
-              </div>
-              <div className="card bg-gradient-to-br from-blue-50 to-cyan-50">
-                <h4 className="text-sm text-gray-500 mb-2">🕐 평균 출석 시간</h4>
-                <p className="text-2xl font-bold text-blue-600">{patterns.averageCheckInTime}</p>
-                <p className="text-sm text-blue-700">평균 지각: {patterns.mostCommonLateTime}</p>
               </div>
             </div>
           )}
 
           {/* Weekday-Hour Heatmap */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">🗓️ 요일-시간대별 출석 분포</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <CalendarDaysIcon size={18} className="text-indigo-500" />
+              요일-시간대별 출석 분포
+            </h3>
             <WeekdayHeatmap data={weekdayHeatmapData} />
           </div>
 
@@ -855,7 +885,10 @@ export default function AdminReports() {
           {/* Risk Students */}
           {riskStudents.length > 0 && (
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">🚨 이탈 위험 학생</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <AlertCircleIcon size={18} className="text-red-500" />
+                이탈 위험 학생
+              </h3>
               <p className="text-sm text-gray-500 mb-4">출석률, 연속 결석, 추세를 종합하여 위험도를 분석합니다</p>
               <div className="space-y-3">
                 {riskStudents.map(student => (
@@ -904,7 +937,10 @@ export default function AdminReports() {
 
           {/* Period Comparison Stats */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 이전 기간 대비 변화</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <BarChart2Icon size={18} className="text-indigo-500" />
+              이전 기간 대비 변화
+            </h3>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="text-center p-4 bg-gray-50 rounded-xl">
                 <p className="text-sm text-gray-500 mb-1">전체 기록</p>
@@ -947,7 +983,8 @@ export default function AdminReports() {
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="card">
               <RankingTable
-                title="🏆 반별 출석률 순위"
+                title="반별 출석률 순위"
+                icon={<TrophyIcon size={18} className="text-yellow-500" />}
                 items={classStats.slice(0, 5).map((cls, i) => ({
                   id: cls.classId,
                   rank: i + 1,
@@ -968,7 +1005,8 @@ export default function AdminReports() {
 
             <div className="card">
               <RankingTable
-                title="⚠️ 관리 필요 반"
+                title="관리 필요 반"
+                icon={<AlertTriangleIcon size={18} className="text-red-500" />}
                 items={[...classStats]
                   .reverse()
                   .filter(c => c.attendanceRate < 90)

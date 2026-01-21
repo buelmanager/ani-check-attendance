@@ -13,13 +13,13 @@ const getRiskLevel = (score: number): {
   level: string;
   color: string;
   bgColor: string;
-  icon: string;
+  iconColor: string;
 } => {
-  if (score < 20) return { level: '안전', color: 'text-green-600', bgColor: 'bg-green-100', icon: '✅' };
-  if (score < 40) return { level: '양호', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: '👍' };
-  if (score < 60) return { level: '주의', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: '⚠️' };
-  if (score < 80) return { level: '경고', color: 'text-orange-600', bgColor: 'bg-orange-100', icon: '🚨' };
-  return { level: '위험', color: 'text-red-600', bgColor: 'bg-red-100', icon: '🔴' };
+  if (score < 20) return { level: '안전', color: 'text-green-600', bgColor: 'bg-green-100', iconColor: 'text-green-500' };
+  if (score < 40) return { level: '양호', color: 'text-blue-600', bgColor: 'bg-blue-100', iconColor: 'text-blue-500' };
+  if (score < 60) return { level: '주의', color: 'text-yellow-600', bgColor: 'bg-yellow-100', iconColor: 'text-yellow-500' };
+  if (score < 80) return { level: '경고', color: 'text-orange-600', bgColor: 'bg-orange-100', iconColor: 'text-orange-500' };
+  return { level: '위험', color: 'text-red-600', bgColor: 'bg-red-100', iconColor: 'text-red-500' };
 };
 
 export default function RiskIndicator({
@@ -44,7 +44,7 @@ export default function RiskIndicator({
       <div className="flex items-center justify-between mb-2">
         <span className={`${s.title} font-medium text-gray-700`}>{label}</span>
         <span className={`${s.title} font-semibold ${riskInfo.color}`}>
-          {riskInfo.icon} {riskInfo.level}
+          {riskInfo.level}
         </span>
       </div>
 

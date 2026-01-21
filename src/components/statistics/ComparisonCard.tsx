@@ -85,8 +85,8 @@ export default function ComparisonCard({
         {isNeutral
           ? '변화 없음'
           : isPositive
-            ? `📈 ${Math.abs(diff).toFixed(1)}${unit} 향상`
-            : `📉 ${Math.abs(diff).toFixed(1)}${unit} 하락`
+            ? `${Math.abs(diff).toFixed(1)}${unit} 향상`
+            : `${Math.abs(diff).toFixed(1)}${unit} 하락`
         }
       </div>
     </div>

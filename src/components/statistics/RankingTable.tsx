@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 interface RankingItem {
   id: string;
   rank: number;
@@ -10,6 +12,7 @@ interface RankingItem {
 interface RankingTableProps {
   items: RankingItem[];
   title?: string;
+  icon?: ReactNode;
   valueLabel?: string;
   valueSuffix?: string;
   maxItems?: number;
@@ -19,6 +22,7 @@ interface RankingTableProps {
 export default function RankingTable({
   items,
   title,
+  icon,
   valueLabel = '출석률',
   valueSuffix = '%',
   maxItems = 10,
@@ -36,7 +40,10 @@ export default function RankingTable({
   return (
     <div>
       {title && (
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          {icon}
+          {title}
+        </h3>
       )}
       <div className="overflow-x-auto">
         <table className="w-full">

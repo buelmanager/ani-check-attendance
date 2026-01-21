@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
 import { studentService } from '../../services/studentService';
-import type { Student, StudentStatus, GradeLevel } from '../../types';
+import { parentService } from '../../services/parentService';
+import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup } from '../../utils/excelExport';
+import type { Student, StudentStatus, GradeLevel, Parent } from '../../types';
 
 // 학년 옵션
 const GRADE_OPTIONS: GradeLevel[] = [
@@ -72,6 +74,15 @@ export default function AdminStudents() {
   // 필터 상태
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'all'>('all');
   const [gradeFilter, setGradeFilter] = useState<GradeLevel | 'all'>('all');
+
+  // 부모 데이터 (백업용)
+  const [parents, setParents] = useState<Parent[]>([]);
+
+  // 부모 데이터 구독
+  useEffect(() => {
+    const unsubscribe = parentService.subscribe(setParents);
+    return () => unsubscribe();
+  }, []);
 
   // 상태 변경 폼
   const [newStatus, setNewStatus] = useState<StudentStatus>('active');
@@ -233,15 +244,85 @@ export default function AdminStudents() {
           <h1 className="text-2xl font-bold text-gray-900">학생 관리</h1>
           <p className="text-gray-500">{students.length}명의 학생</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="btn-accent flex items-center justify-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-          </svg>
-          학생 추가
-        </button>
+        <div className="flex items-center gap-2">
+          {/* 엑셀 내보내기 드롭다운 */}
+          <div className="relative group">
+            <button
+              className="btn-outline flex items-center justify-center gap-2 px-4 py-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              엑셀 내보내기
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+              <button
+                onClick={() => exportAllStudents(students, classes)}
+                className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg flex items-center gap-2"
+              >
+                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                전체 학생 ({students.length}명)
+              </button>
+              <button
+                onClick={() => exportFilteredStudents(filteredStudents, classes, statusFilter !== 'all' ? STATUS_LABELS[statusFilter] : undefined)}
+                className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                현재 필터 ({filteredStudents.length}명)
+              </button>
+              <div className="border-t border-gray-100">
+                <button
+                  onClick={() => exportStudentsByStatus(students, classes, 'active')}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  재원 학생 ({statusCounts.active}명)
+                </button>
+                <button
+                  onClick={() => exportStudentsByStatus(students, classes, 'inactive')}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                  휴원 학생 ({statusCounts.inactive}명)
+                </button>
+                <button
+                  onClick={() => exportStudentsByStatus(students, classes, 'withdrawn')}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  퇴원 학생 ({statusCounts.withdrawn}명)
+                </button>
+              </div>
+              <div className="border-t border-gray-100">
+                <button
+                  onClick={() => exportFullBackup(students, classes, parents)}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  전체 백업 (학생+학부모)
+                </button>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowModal(true)}
+            className="btn-accent flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+            학생 추가
+          </button>
+        </div>
       </div>
 
       {/* 상태 필터 탭 */}

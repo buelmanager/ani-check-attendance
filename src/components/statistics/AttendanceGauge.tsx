@@ -114,7 +114,7 @@ export default function AttendanceGauge({
           value >= target ? 'text-green-600' : value >= target - 10 ? 'text-yellow-600' : 'text-red-600'
         }`}>
           {value >= target
-            ? `🎉 목표 달성! (+${(value - target).toFixed(1)}%)`
+            ? `목표 달성! (+${(value - target).toFixed(1)}%)`
             : `목표까지 ${(target - value).toFixed(1)}% 남음`
           }
         </div>
