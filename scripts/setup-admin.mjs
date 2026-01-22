@@ -34,7 +34,7 @@ async function setupAdmin() {
     console.log('Adding admin document to Firestore...');
     await setDoc(doc(db, 'admins', user.uid), {
       email: user.email,
-      name: 'ANI WID Admin',
+      name: 'CheckMate Admin',
       role: 'superadmin',
       createdAt: serverTimestamp()
     });

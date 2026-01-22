@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { CheckCircleIcon, AlertCircleIcon } from './Icons';
 
 interface DayData {
   day: number; // 0 = Sunday, 1 = Monday, ...
@@ -129,12 +130,12 @@ export default function DayPatternChart({
                   {/* Best/Worst 뱃지 */}
                   {isBest && (
                     <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-xs">👍</span>
+                      <CheckCircleIcon size={12} className="text-white" />
                     </div>
                   )}
                   {isWorst && (
                     <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-xs">📌</span>
+                      <AlertCircleIcon size={12} className="text-white" />
                     </div>
                   )}
                 </>
@@ -153,14 +154,14 @@ export default function DayPatternChart({
         <div className="mt-4 flex items-center justify-center gap-6 text-sm">
           {bestDay && (
             <div className="flex items-center gap-2">
-              <span className="text-green-500">👍</span>
+              <CheckCircleIcon size={16} className="text-green-500" />
               <span className="text-gray-600">최고:</span>
               <span className="font-semibold text-green-600">{bestDay.dayName}요일 {bestDay.attendanceRate.toFixed(0)}%</span>
             </div>
           )}
           {worstDay && bestDay !== worstDay && (
             <div className="flex items-center gap-2">
-              <span className="text-red-500">📌</span>
+              <AlertCircleIcon size={16} className="text-red-500" />
               <span className="text-gray-600">관리필요:</span>
               <span className="font-semibold text-red-600">{worstDay.dayName}요일 {worstDay.attendanceRate.toFixed(0)}%</span>
             </div>

@@ -63,7 +63,7 @@ export default function Students() {
         {/* Search */}
         <div className="mb-6">
           <div className="relative">
-            <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -71,7 +71,7 @@ export default function Students() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="학생 검색..."
-              className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 text-primary placeholder-gray-400 focus:outline-none focus:border-primary shadow-sm"
+              className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-11 pr-4 py-3 text-primary placeholder-gray-400 focus:outline-none focus:border-primary shadow-sm"
             />
           </div>
         </div>

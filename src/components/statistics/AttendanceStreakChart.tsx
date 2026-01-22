@@ -1,3 +1,5 @@
+import { TrophyIcon, StarIcon, BarChartIcon, CalendarIcon, FlameIcon, MedalIcon, ScrollIcon } from './Icons';
+
 interface StreakData {
   currentStreak: number;
   longestStreak: number;
@@ -20,12 +22,23 @@ export default function AttendanceStreakChart({
 }: AttendanceStreakChartProps) {
   // 메시지 생성
   const getMessage = () => {
-    if (data.currentStreak >= 30) return { text: '한 달 이상 연속 출석! 정말 대단해요!', emoji: '🏆' };
-    if (data.currentStreak >= 14) return { text: '2주 연속 출석! 꾸준함이 빛나요!', emoji: '🌟' };
-    if (data.currentStreak >= 7) return { text: '일주일 연속 출석 달성!', emoji: '👏' };
-    if (data.currentStreak >= 3) return { text: '연속 출석 중! 계속 이어가세요!', emoji: '💪' };
-    if (data.currentStreak > 0) return { text: '출석 시작! 화이팅!', emoji: '🔥' };
-    return { text: '새로운 연속 출석을 시작해보세요!', emoji: '📅' };
+    if (data.currentStreak >= 30) return { text: '한 달 이상 연속 출석! 정말 대단해요!', icon: 'trophy' };
+    if (data.currentStreak >= 14) return { text: '2주 연속 출석! 꾸준함이 빛나요!', icon: 'star' };
+    if (data.currentStreak >= 7) return { text: '일주일 연속 출석 달성!', icon: 'medal' };
+    if (data.currentStreak >= 3) return { text: '연속 출석 중! 계속 이어가세요!', icon: 'flame' };
+    if (data.currentStreak > 0) return { text: '출석 시작! 화이팅!', icon: 'flame' };
+    return { text: '새로운 연속 출석을 시작해보세요!', icon: 'calendar' };
+  };
+
+  const renderIcon = (iconType: string, className: string = '') => {
+    switch (iconType) {
+      case 'trophy': return <TrophyIcon size={48} className={className} />;
+      case 'star': return <StarIcon size={48} className={className} />;
+      case 'medal': return <MedalIcon size={48} className={className} />;
+      case 'flame': return <FlameIcon size={48} className={className} />;
+      case 'calendar': return <CalendarIcon size={48} className={className} />;
+      default: return <TrophyIcon size={48} className={className} />;
+    }
   };
 
   const message = getMessage();
@@ -41,7 +54,9 @@ export default function AttendanceStreakChart({
       <div className={`rounded-2xl p-6 text-center mb-4 ${
         isRecordBreaking ? 'bg-gradient-to-br from-yellow-50 to-orange-50' : 'bg-gradient-to-br from-green-50 to-emerald-50'
       }`}>
-        <div className="text-6xl mb-2">{message.emoji}</div>
+        <div className="flex justify-center mb-2">
+          {renderIcon(message.icon, isRecordBreaking ? 'text-yellow-500' : 'text-green-500')}
+        </div>
         <div className={`text-5xl font-bold mb-1 ${
           isRecordBreaking ? 'text-yellow-600' : 'text-green-600'
         }`}>
@@ -50,7 +65,8 @@ export default function AttendanceStreakChart({
         <div className="text-sm text-gray-600">현재 연속 출석</div>
         {isRecordBreaking && data.currentStreak > 0 && (
           <div className="mt-2 inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 rounded-full">
-            <span className="text-yellow-600 text-xs font-semibold">🏅 최장 기록 경신 중!</span>
+            <MedalIcon size={14} className="text-yellow-600" />
+            <span className="text-yellow-600 text-xs font-semibold">최장 기록 경신 중!</span>
           </div>
         )}
       </div>
@@ -59,14 +75,14 @@ export default function AttendanceStreakChart({
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-yellow-50 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">⭐</span>
+            <StarIcon size={20} className="text-yellow-500" />
             <span className="text-xs text-yellow-700">최장 연속 기록</span>
           </div>
           <div className="text-2xl font-bold text-yellow-600">{data.longestStreak}일</div>
         </div>
         <div className="bg-blue-50 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">📊</span>
+            <BarChartIcon size={20} className="text-blue-500" />
             <span className="text-xs text-blue-700">총 출석 일수</span>
           </div>
           <div className="text-2xl font-bold text-blue-600">{data.totalDays}일</div>
@@ -101,7 +117,10 @@ export default function AttendanceStreakChart({
       {/* 최근 연속 기록 */}
       {data.streakHistory && data.streakHistory.length > 0 && (
         <div className="bg-gray-50 rounded-xl p-4">
-          <h5 className="text-sm font-semibold text-gray-700 mb-3">📜 연속 출석 기록</h5>
+          <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <ScrollIcon size={16} className="text-gray-500" />
+            연속 출석 기록
+          </h5>
           <div className="space-y-2">
             {data.streakHistory.slice(0, 3).map((streak, i) => (
               <div
@@ -111,8 +130,8 @@ export default function AttendanceStreakChart({
                 }`}
               >
                 <div>
-                  <div className="text-sm font-medium text-gray-700">
-                    {streak.length === data.longestStreak && <span className="mr-1">🥇</span>}
+                  <div className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                    {streak.length === data.longestStreak && <TrophyIcon size={14} className="text-yellow-500" />}
                     {streak.length}일 연속
                   </div>
                   <div className="text-xs text-gray-500">

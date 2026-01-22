@@ -145,7 +145,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-6 border-b border-gray-200">
-            <h1 className="text-2xl font-bold text-accent">ANI WID</h1>
+            <h1 className="text-2xl font-bold text-accent">CheckMate</h1>
             <p className="text-sm text-gray-500">관리자 패널</p>
           </div>
 
@@ -218,7 +218,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold text-accent">ANI WID</h1>
+          <h1 className="text-xl font-bold text-accent">CheckMate</h1>
         </header>
 
         {/* Page content */}

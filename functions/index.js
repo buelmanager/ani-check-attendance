@@ -58,7 +58,7 @@ exports.sendPushOnNotification = onDocumentCreated(
       // notification 필드를 사용하지 않고 data만 사용하여 Service Worker에서만 알림 표시
       const fcmMessage = {
         data: {
-          title: title || "ANI WID 알림",
+          title: title || "CheckMate 알림",
           body: message || "",
           type: type || "general",
           notificationId: event.params.notificationId,

@@ -190,7 +190,7 @@ export default function QRCheckin() {
     <div className="app-container min-h-screen p-6 bg-gray-50">
       {/* Header */}
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-accent mb-2">ANI WID</h1>
+        <h1 className="text-3xl font-bold text-accent mb-2">CheckMate</h1>
         <p className="text-gray-500">QR 출석 체크</p>
       </div>
 

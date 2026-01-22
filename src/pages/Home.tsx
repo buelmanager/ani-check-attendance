@@ -53,7 +53,7 @@ export default function Home() {
 
   return (
     <div
-      className="app-container min-h-screen flex flex-col items-center justify-center"
+      className="fixed inset-0 w-full h-full flex flex-col items-center justify-center z-50"
       style={{ backgroundColor: '#1a1f2e' }}
     >
       {/* Logo */}
@@ -62,14 +62,14 @@ export default function Home() {
           className="text-5xl font-bold tracking-widest"
           style={{ color: '#c9a962' }}
         >
-          ANI WID
+          CheckMate
         </h1>
       </div>
 
       {/* Subtitle */}
       <div className="text-center mb-12">
-        <p className="text-gray-400 text-sm">예술가의 꿈을 현실로 만드는</p>
-        <p className="text-gray-400 text-sm">최고의 미술 전문 교육기관</p>
+        <p className="text-gray-400 text-sm">스마트한 학원 관리 시스템</p>
+        <p className="text-gray-400 text-sm">출석, 학생, 학부모 통합 관리</p>
       </div>
 
       {showRoleSelection ? (

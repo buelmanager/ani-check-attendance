@@ -1,3 +1,5 @@
+import { StarIcon, ThumbsUpIcon, TargetIcon, AlertCircleIcon } from './Icons';
+
 interface ComparisonData {
   label: string;
   studentValue: number;
@@ -138,20 +140,24 @@ export default function PersonalComparisonChart({
         avgVsClass >= 0 ? 'bg-green-50' : 'bg-yellow-50'
       }`}>
         {avgVsClass >= 5 ? (
-          <p className="text-sm text-green-700">
-            🌟 <strong>{studentName}</strong> 학생은 반 평균보다 <strong>{avgVsClass.toFixed(1)}%</strong> 높은 출석률을 보이고 있어요!
+          <p className="text-sm text-green-700 flex items-center justify-center gap-1">
+            <StarIcon size={16} className="text-green-600" />
+            <strong>{studentName}</strong> 학생은 반 평균보다 <strong>{avgVsClass.toFixed(1)}%</strong> 높은 출석률을 보이고 있어요!
           </p>
         ) : avgVsClass >= 0 ? (
-          <p className="text-sm text-green-700">
-            👍 <strong>{studentName}</strong> 학생은 반 평균 이상의 출석률을 유지하고 있어요.
+          <p className="text-sm text-green-700 flex items-center justify-center gap-1">
+            <ThumbsUpIcon size={16} className="text-green-600" />
+            <strong>{studentName}</strong> 학생은 반 평균 이상의 출석률을 유지하고 있어요.
           </p>
         ) : avgVsClass >= -5 ? (
-          <p className="text-sm text-yellow-700">
-            💪 <strong>{studentName}</strong> 학생은 반 평균에 근접한 출석률이에요. 조금만 더 힘내요!
+          <p className="text-sm text-yellow-700 flex items-center justify-center gap-1">
+            <TargetIcon size={16} className="text-yellow-600" />
+            <strong>{studentName}</strong> 학생은 반 평균에 근접한 출석률이에요. 조금만 더 힘내요!
           </p>
         ) : (
-          <p className="text-sm text-yellow-700">
-            📌 <strong>{studentName}</strong> 학생의 출석률 향상이 필요해요. 함께 노력해봐요!
+          <p className="text-sm text-yellow-700 flex items-center justify-center gap-1">
+            <AlertCircleIcon size={16} className="text-yellow-600" />
+            <strong>{studentName}</strong> 학생의 출석률 향상이 필요해요. 함께 노력해봐요!
           </p>
         )}
       </div>

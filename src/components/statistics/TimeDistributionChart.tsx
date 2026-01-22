@@ -30,8 +30,8 @@ export default function TimeDistributionChart({
       };
     }
 
-    // 데이터가 있는 시간대만 필터링
-    const hoursWithData = data.filter(d => d.count > 0);
+    // 데이터가 있는 시간대만 필터링 (NaN 값 제외)
+    const hoursWithData = data.filter(d => d.count > 0 && !isNaN(d.hour) && !isNaN(d.count));
 
     // 총계 계산
     const totalCount = hoursWithData.reduce((sum, d) => sum + d.count, 0);
@@ -47,12 +47,14 @@ export default function TimeDistributionChart({
     let totalMinutes = 0;
     let totalCheckIns = 0;
     hoursWithData.forEach(d => {
-      totalMinutes += d.hour * 60 * d.count;
-      totalCheckIns += d.count;
+      if (!isNaN(d.hour) && !isNaN(d.count)) {
+        totalMinutes += d.hour * 60 * d.count;
+        totalCheckIns += d.count;
+      }
     });
     const avgMinutes = totalCheckIns > 0 ? totalMinutes / totalCheckIns : 0;
-    const avgHour = Math.floor(avgMinutes / 60);
-    const avgMin = Math.round(avgMinutes % 60);
+    const avgHour = !isNaN(avgMinutes) ? Math.floor(avgMinutes / 60) : 0;
+    const avgMin = !isNaN(avgMinutes) ? Math.round(avgMinutes % 60) : 0;
 
     return {
       hours: hoursWithData.sort((a, b) => a.hour - b.hour),
@@ -84,7 +86,7 @@ export default function TimeDistributionChart({
       {/* 메인 요약 카드 */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="bg-indigo-50 rounded-xl p-4 text-center">
-          <div className="text-3xl font-bold text-indigo-600">{chartData.peakHour?.hour || '-'}시</div>
+          <div className="text-3xl font-bold text-indigo-600">{chartData.peakHour !== null && !isNaN(chartData.peakHour.hour) ? `${chartData.peakHour.hour}시` : '-'}</div>
           <div className="text-xs text-indigo-700 mt-1">가장 많이 출석한 시간</div>
         </div>
         <div className="bg-green-50 rounded-xl p-4 text-center">
@@ -114,7 +116,7 @@ export default function TimeDistributionChart({
             >
               {/* 시간 */}
               <div className={`w-12 text-center font-bold ${isPeak ? 'text-indigo-600' : 'text-gray-700'}`}>
-                {hourData.hour}시
+                {!isNaN(hourData.hour) ? `${hourData.hour}시` : '-'}
               </div>
 
               {/* 막대 그래프 */}

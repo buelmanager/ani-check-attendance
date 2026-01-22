@@ -1,7 +1,7 @@
 {
   "name": "functions",
   "version": "1.0.0",
-  "description": "ANI WID Cloud Functions for Push Notifications",
+  "description": "CheckMate Cloud Functions for Push Notifications",
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions",

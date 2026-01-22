@@ -78,7 +78,7 @@ export default function ParentSettings() {
 
         {/* Version */}
         <p className="text-center text-gray-400 text-sm mt-6">
-          ANI WID v{APP_VERSION}
+          CheckMate v{APP_VERSION}
         </p>
       </div>
     </ParentLayout>

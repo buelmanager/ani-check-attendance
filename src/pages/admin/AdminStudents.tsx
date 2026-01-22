@@ -6,7 +6,7 @@ import { studentService } from '../../services/studentService';
 import { parentService, RelationType } from '../../services/parentService';
 import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup, readStudentsFromExcel, readParentsFromExcel } from '../../utils/excelExport';
 import { demoStudents } from '../../data/demoStudents';
-import { batchCreateStudents, BatchStudentData, batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData, ParentChildMap, deleteAllGuardians } from '../../lib/firebase';
+import { batchCreateStudents, BatchStudentData, batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData, ParentChildMap } from '../../lib/firebase';
 import type { Student, StudentStatus, GradeLevel, Parent } from '../../types';
 
 // 보호자 입력 폼 데이터 타입
@@ -110,9 +110,6 @@ export default function AdminStudents() {
     deletedParents: number;
     deletedAuth: number;
   } | null>(null);
-
-  // 학부모 Auth 계정 일괄 삭제 상태
-  const [isDeletingGuardians, setIsDeletingGuardians] = useState(false);
 
   // 데모 데이터 등록 관련 상태
   const [isDemoLoading, setIsDemoLoading] = useState(false);
@@ -384,26 +381,6 @@ export default function AdminStudents() {
       alert('일괄 삭제 중 오류가 발생했습니다. 다시 시도해주세요.');
       setIsBulkDeleting(false);
       setBulkDeleteProgress(null);
-    }
-  };
-
-  // 학부모 Auth 계정 일괄 삭제 핸들러
-  const handleDeleteAllGuardians = async () => {
-    if (!confirm('모든 학부모의 Firebase Authentication 계정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.')) return;
-
-    setIsDeletingGuardians(true);
-    try {
-      const result = await deleteAllGuardians();
-      if (result.success) {
-        alert(`학부모 계정 삭제 완료!\n\n삭제된 Auth 계정: ${result.deletedAuthUsers}건\n삭제된 부모 문서: ${result.deletedParentDocs}건\n삭제된 매핑: ${result.deletedAuthMappings}건`);
-      } else {
-        alert(`일부 오류 발생:\n${result.errors.map(e => e.error).join('\n')}`);
-      }
-    } catch (error) {
-      console.error('Error deleting guardians:', error);
-      alert('학부모 계정 삭제 중 오류가 발생했습니다.');
-    } finally {
-      setIsDeletingGuardians(false);
     }
   };
 
@@ -742,18 +719,6 @@ export default function AdminStudents() {
               </span>
             </button>
           )}
-          {/* 학부모 Auth 일괄 삭제 버튼 */}
-          <button
-            onClick={handleDeleteAllGuardians}
-            disabled={isDeletingGuardians}
-            className="btn-outline flex items-center justify-center gap-2 px-4 py-2 border-orange-500 text-orange-600 hover:bg-orange-50 disabled:opacity-50"
-            title="모든 학부모의 Firebase Authentication 계정을 삭제합니다"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-            {isDeletingGuardians ? '삭제 중...' : '학부모 Auth 삭제'}
-          </button>
           {/* 엑셀 내보내기 드롭다운 */}
           <div className="relative group">
             <button
@@ -910,7 +875,7 @@ export default function AdminStudents() {
       {/* Search & Filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
-          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
@@ -918,7 +883,7 @@ export default function AdminStudents() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="학생 검색..."
-            className="input-field pl-12"
+            className="input-field !pl-11"
           />
         </div>
         <select

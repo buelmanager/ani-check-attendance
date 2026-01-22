@@ -41,7 +41,7 @@ export default function AdminLogin() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-accent mb-2">ANI WID</h1>
+          <h1 className="text-4xl font-bold text-accent mb-2">CheckMate</h1>
           <p className="text-gray-500">관리자 로그인</p>
         </div>
 
