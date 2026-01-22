@@ -3,6 +3,11 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { APP_VERSION } from '../../config/version';
 
+interface GitChanges {
+  changes: string[];
+  summary: string;
+}
+
 interface AdminLayoutProps {
   children: ReactNode;
 }
@@ -87,11 +92,38 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const { adminData, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [gitModalOpen, setGitModalOpen] = useState(false);
+  const [gitChanges, setGitChanges] = useState<GitChanges | null>(null);
+  const [gitLoading, setGitLoading] = useState(false);
 
   const handleLogout = async () => {
     await logout();
     navigate('/admin/login');
   };
+
+  const fetchGitChanges = async () => {
+    setGitLoading(true);
+    try {
+      const response = await fetch('/api/git-changes');
+      const data = await response.json();
+      setGitChanges(data);
+    } catch (error) {
+      setGitChanges({
+        changes: ['Git 정보를 불러올 수 없습니다'],
+        summary: '개발 서버에서만 사용 가능합니다'
+      });
+    } finally {
+      setGitLoading(false);
+    }
+  };
+
+  const openGitModal = () => {
+    setGitModalOpen(true);
+    fetchGitChanges();
+  };
+
+  // 개발 환경에서만 Git 버튼 표시
+  const isDev = import.meta.env.DEV;
 
   return (
     <div className="min-h-screen bg-gray-50 flex pwa-safe-top">
@@ -158,6 +190,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             >
               로그아웃
             </button>
+            {isDev && (
+              <button
+                onClick={openGitModal}
+                className="w-full mt-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                Git 변경사항
+              </button>
+            )}
             <p className="text-xs text-gray-400 text-center mt-3">v{APP_VERSION}</p>
           </div>
         </div>
@@ -185,6 +228,104 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </main>
       </div>
+
+      {/* Git Changes Modal */}
+      {gitModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                Git 변경사항
+              </h3>
+              <button
+                onClick={() => setGitModalOpen(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {gitLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin w-8 h-8 border-4 border-accent border-t-transparent rounded-full" />
+                </div>
+              ) : gitChanges ? (
+                <div className="space-y-4">
+                  {/* 변경된 파일 목록 */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                      변경된 파일
+                    </h4>
+                    <div className="bg-gray-50 rounded-xl p-3 space-y-1">
+                      {gitChanges.changes.map((change, i) => {
+                        const isModified = change.includes('[수정됨]');
+                        const isAdded = change.includes('[추가됨]');
+                        const isDeleted = change.includes('[삭제됨]');
+                        const isUntracked = change.includes('[미추적]');
+
+                        return (
+                          <div
+                            key={i}
+                            className={`text-sm font-mono px-2 py-1 rounded ${
+                              isModified ? 'bg-yellow-100 text-yellow-800' :
+                              isAdded ? 'bg-green-100 text-green-800' :
+                              isDeleted ? 'bg-red-100 text-red-800' :
+                              isUntracked ? 'bg-gray-200 text-gray-600' :
+                              'text-gray-700'
+                            }`}
+                          >
+                            {change}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 요약 정보 */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full" />
+                      상세 정보
+                    </h4>
+                    <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto whitespace-pre-wrap">
+                      {gitChanges.summary}
+                    </pre>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  정보를 불러올 수 없습니다
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-200 flex gap-2">
+              <button
+                onClick={fetchGitChanges}
+                className="flex-1 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors"
+              >
+                새로고침
+              </button>
+              <button
+                onClick={() => setGitModalOpen(false)}
+                className="flex-1 px-4 py-2 text-sm bg-accent text-white rounded-xl hover:bg-accent/90 transition-colors"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

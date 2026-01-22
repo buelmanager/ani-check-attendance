@@ -439,14 +439,14 @@ exports.batchCreateStudents = onCall(
 );
 
 /**
- * 학생+부모 일괄 삭제 (서버에서 처리)
- * Firestore 문서와 Firebase Auth 계정 모두 삭제
+ * 학생+부모 일괄 삭제 (서버에서 처리) - 최적화 버전
+ * Firestore batch write와 병렬 처리로 성능 개선
  */
 exports.batchDeleteStudents = onCall(
   {
     region: "asia-northeast3",
     timeoutSeconds: 540,
-    memory: "512MiB"
+    memory: "1GiB"
   },
   async (request) => {
     if (!request.auth) {
@@ -470,7 +470,7 @@ exports.batchDeleteStudents = onCall(
       throw new HttpsError("internal", "관리자 권한 확인 중 오류가 발생했습니다.");
     }
 
-    console.log(`Starting batch delete for ${studentIds.length} students`);
+    console.log(`Starting optimized batch delete for ${studentIds.length} students`);
 
     const results = {
       success: true,
@@ -483,140 +483,182 @@ exports.batchDeleteStudents = onCall(
 
     const authUidsToDelete = [];
     const parentIdsToCheck = new Set();
+    const studentPhonesToDelete = [];
+    const attendanceIdsToDelete = [];
 
-    // 순차 처리
-    for (let i = 0; i < studentIds.length; i++) {
-      const studentId = studentIds[i];
+    // 1단계: 모든 학생 문서 병렬 조회
+    console.log('Phase 1: Fetching all student documents...');
+    const studentDocs = await Promise.all(
+      studentIds.map(id => db.collection("students").doc(id).get())
+    );
 
-      try {
-        console.log(`Processing student ${i + 1}/${studentIds.length}: ${studentId}`);
+    // 학생 데이터 수집
+    const validStudents = [];
+    for (let i = 0; i < studentDocs.length; i++) {
+      const doc = studentDocs[i];
+      if (!doc.exists) {
+        console.log(`Student not found: ${studentIds[i]}`);
+        continue;
+      }
 
-        // 학생 문서 조회
-        const studentDoc = await db.collection("students").doc(studentId).get();
-        if (!studentDoc.exists) {
-          console.log(`Student not found: ${studentId}`);
-          continue;
-        }
+      const data = doc.data();
+      validStudents.push({ id: doc.id, data });
 
-        const studentData = studentDoc.data();
+      if (data.userId) {
+        authUidsToDelete.push(data.userId);
+      }
 
-        // 학생의 Auth UID 수집
-        if (studentData.userId) {
-          authUidsToDelete.push(studentData.userId);
-        }
+      if (data.parentIds && data.parentIds.length > 0) {
+        data.parentIds.forEach(pid => parentIdsToCheck.add(pid));
+      }
 
-        // 연결된 부모 ID 수집
-        if (studentData.parentIds && studentData.parentIds.length > 0) {
-          studentData.parentIds.forEach(pid => parentIdsToCheck.add(pid));
-        }
-
-        // 관련 출석 기록 삭제
-        const attendanceQuery = await db.collection("attendance")
-          .where("studentId", "==", studentId)
-          .get();
-
-        const attendanceBatch = db.batch();
-        attendanceQuery.docs.forEach(doc => {
-          attendanceBatch.delete(doc.ref);
-        });
-        if (!attendanceQuery.empty) {
-          await attendanceBatch.commit();
-          console.log(`Deleted ${attendanceQuery.docs.length} attendance records`);
-        }
-
-        // authMappings에서 학생 삭제
-        if (studentData.phone) {
-          const cleanPhone = studentData.phone.replace(/[^0-9]/g, '');
-          const mappingDoc = db.collection("authMappings").doc(`student_${cleanPhone}`);
-          const mappingSnapshot = await mappingDoc.get();
-          if (mappingSnapshot.exists) {
-            await mappingDoc.delete();
-          }
-        }
-
-        // 학생 문서 삭제
-        await db.collection("students").doc(studentId).delete();
-        results.deletedStudents++;
-        console.log(`Deleted student: ${studentId}`);
-
-      } catch (error) {
-        console.error(`Error deleting student ${studentId}:`, error);
-        results.errors.push({
-          index: i,
-          type: 'student',
-          id: studentId,
-          error: error.message
-        });
+      if (data.phone) {
+        const cleanPhone = data.phone.replace(/[^0-9]/g, '');
+        studentPhonesToDelete.push(cleanPhone);
       }
     }
 
-    // 부모 처리 (deleteParents 옵션에 따라)
+    console.log(`Found ${validStudents.length} valid students to delete`);
+
+    // 2단계: 출석 기록 조회 (병렬)
+    console.log('Phase 2: Fetching attendance records...');
+    const attendanceQueries = await Promise.all(
+      validStudents.map(s =>
+        db.collection("attendance").where("studentId", "==", s.id).get()
+      )
+    );
+
+    attendanceQueries.forEach(query => {
+      query.docs.forEach(doc => attendanceIdsToDelete.push(doc.ref));
+    });
+
+    console.log(`Found ${attendanceIdsToDelete.length} attendance records to delete`);
+
+    // 3단계: Firestore batch delete (최대 500개씩)
+    console.log('Phase 3: Batch deleting Firestore documents...');
+
+    // 출석 기록 삭제
+    for (let i = 0; i < attendanceIdsToDelete.length; i += 500) {
+      const batch = db.batch();
+      const chunk = attendanceIdsToDelete.slice(i, i + 500);
+      chunk.forEach(ref => batch.delete(ref));
+      await batch.commit();
+      console.log(`Deleted attendance batch ${Math.floor(i/500) + 1}`);
+    }
+
+    // authMappings 삭제 (학생)
+    for (let i = 0; i < studentPhonesToDelete.length; i += 500) {
+      const batch = db.batch();
+      const chunk = studentPhonesToDelete.slice(i, i + 500);
+      chunk.forEach(phone => {
+        batch.delete(db.collection("authMappings").doc(`student_${phone}`));
+      });
+      await batch.commit();
+    }
+
+    // 학생 문서 삭제
+    for (let i = 0; i < validStudents.length; i += 500) {
+      const batch = db.batch();
+      const chunk = validStudents.slice(i, i + 500);
+      chunk.forEach(s => {
+        batch.delete(db.collection("students").doc(s.id));
+      });
+      await batch.commit();
+      results.deletedStudents += chunk.length;
+      console.log(`Deleted students batch ${Math.floor(i/500) + 1}`);
+    }
+
+    // 4단계: 부모 처리
+    console.log('Phase 4: Processing parents...');
     if (deleteParents && parentIdsToCheck.size > 0) {
-      for (const parentId of parentIdsToCheck) {
-        try {
-          const parentDoc = await db.collection("parents").doc(parentId).get();
-          if (!parentDoc.exists) continue;
+      const parentIds = Array.from(parentIdsToCheck);
 
-          const parentData = parentDoc.data();
+      // 부모 문서 병렬 조회
+      const parentDocs = await Promise.all(
+        parentIds.map(id => db.collection("parents").doc(id).get())
+      );
 
-          // 부모의 Auth UID 수집
-          if (parentData.userId) {
-            authUidsToDelete.push(parentData.userId);
-          }
+      const parentPhonesToDelete = [];
+      const validParentIds = [];
 
-          // authMappings에서 부모 삭제
-          if (parentData.phone) {
-            const cleanPhone = parentData.phone.replace(/[^0-9]/g, '');
-            const mappingDoc = db.collection("authMappings").doc(`guardian_${cleanPhone}`);
-            const mappingSnapshot = await mappingDoc.get();
-            if (mappingSnapshot.exists) {
-              await mappingDoc.delete();
-            }
-          }
+      for (const doc of parentDocs) {
+        if (!doc.exists) continue;
+        const data = doc.data();
+        validParentIds.push(doc.id);
 
-          // 부모 문서 삭제
-          await db.collection("parents").doc(parentId).delete();
-          results.deletedParents++;
-          console.log(`Deleted parent: ${parentId}`);
+        if (data.userId) {
+          authUidsToDelete.push(data.userId);
+        }
 
-        } catch (error) {
-          console.error(`Error deleting parent ${parentId}:`, error);
-          results.errors.push({
-            type: 'parent',
-            id: parentId,
-            error: error.message
-          });
+        if (data.phone) {
+          const cleanPhone = data.phone.replace(/[^0-9]/g, '');
+          parentPhonesToDelete.push(cleanPhone);
         }
       }
+
+      // authMappings 삭제 (부모)
+      for (let i = 0; i < parentPhonesToDelete.length; i += 500) {
+        const batch = db.batch();
+        const chunk = parentPhonesToDelete.slice(i, i + 500);
+        chunk.forEach(phone => {
+          batch.delete(db.collection("authMappings").doc(`guardian_${phone}`));
+        });
+        await batch.commit();
+      }
+
+      // 부모 문서 삭제
+      for (let i = 0; i < validParentIds.length; i += 500) {
+        const batch = db.batch();
+        const chunk = validParentIds.slice(i, i + 500);
+        chunk.forEach(id => {
+          batch.delete(db.collection("parents").doc(id));
+        });
+        await batch.commit();
+        results.deletedParents += chunk.length;
+      }
+
+      console.log(`Deleted ${results.deletedParents} parents`);
+
     } else if (parentIdsToCheck.size > 0) {
       // deleteParents가 false인 경우, 부모의 studentIds에서 삭제된 학생 제거
-      for (const parentId of parentIdsToCheck) {
-        try {
-          const parentDoc = await db.collection("parents").doc(parentId).get();
-          if (!parentDoc.exists) continue;
+      const parentIds = Array.from(parentIdsToCheck);
+      const parentDocs = await Promise.all(
+        parentIds.map(id => db.collection("parents").doc(id).get())
+      );
 
-          const parentData = parentDoc.data();
-          const currentStudentIds = parentData.studentIds || [];
+      for (let i = 0; i < parentDocs.length; i += 500) {
+        const batch = db.batch();
+        const chunk = parentDocs.slice(i, i + 500);
+
+        for (const doc of chunk) {
+          if (!doc.exists) continue;
+          const data = doc.data();
+          const currentStudentIds = data.studentIds || [];
           const updatedStudentIds = currentStudentIds.filter(sid => !studentIds.includes(sid));
 
-          await db.collection("parents").doc(parentId).update({
+          batch.update(doc.ref, {
             studentIds: updatedStudentIds,
             updatedAt: new Date()
           });
-          console.log(`Updated parent ${parentId}: removed deleted students`);
-
-        } catch (error) {
-          console.error(`Error updating parent ${parentId}:`, error);
         }
+
+        await batch.commit();
       }
+
+      console.log(`Updated ${parentIds.length} parents (removed deleted students)`);
     }
 
-    // Firebase Auth 일괄 삭제
+    // 5단계: Firebase Auth 일괄 삭제
+    console.log('Phase 5: Deleting Auth users...');
     if (authUidsToDelete.length > 0) {
       try {
-        const deleteResult = await auth.deleteUsers(authUidsToDelete);
-        results.deletedAuthUsers = deleteResult.successCount;
-        console.log(`Auth delete result: ${deleteResult.successCount} succeeded, ${deleteResult.failureCount} failed`);
+        // Firebase Auth는 한 번에 최대 1000개까지 삭제 가능
+        for (let i = 0; i < authUidsToDelete.length; i += 1000) {
+          const chunk = authUidsToDelete.slice(i, i + 1000);
+          const deleteResult = await auth.deleteUsers(chunk);
+          results.deletedAuthUsers += deleteResult.successCount;
+          console.log(`Auth delete batch ${Math.floor(i/1000) + 1}: ${deleteResult.successCount} succeeded`);
+        }
       } catch (error) {
         console.error("Error deleting auth users:", error);
         results.errors.push({
@@ -646,7 +688,7 @@ exports.batchRestoreStudents = onCall(
       throw new HttpsError("unauthenticated", "인증이 필요합니다.");
     }
 
-    const { students, parents = [], preserveIds = false } = request.data;
+    const { students, parents = [], parentChildMap = {} } = request.data;
     if (!students || !Array.isArray(students) || students.length === 0) {
       throw new HttpsError("invalid-argument", "복원할 학생 데이터가 필요합니다.");
     }
@@ -664,6 +706,7 @@ exports.batchRestoreStudents = onCall(
     }
 
     console.log(`Starting batch restore for ${students.length} students and ${parents.length} parents`);
+    console.log(`Parent-child map:`, JSON.stringify(parentChildMap));
 
     const results = {
       success: true,
@@ -672,12 +715,14 @@ exports.batchRestoreStudents = onCall(
       createdStudents: 0,
       createdParents: 0,
       createdAuthUsers: 0,
+      linkedParentStudent: 0,
       errors: []
     };
 
     // ID 매핑 (기존 ID -> 새 ID)
-    const studentIdMap = new Map();
-    const parentIdMap = new Map();
+    const parentIdMap = new Map(); // oldId or phone -> newParentId
+    const parentPhoneToId = new Map(); // phone -> parentId (새로 생성된 부모)
+    const studentNameToId = new Map(); // studentName -> studentId (새로 생성된 학생)
 
     // 1. 먼저 부모 데이터 복원
     for (let i = 0; i < parents.length; i++) {
@@ -701,6 +746,7 @@ exports.batchRestoreStudents = onCall(
           if (!existingQuery.empty) {
             existingParentId = existingQuery.docs[0].id;
             parentIdMap.set(oldParentId, existingParentId);
+            parentPhoneToId.set(parentData.phone, existingParentId);
             console.log(`Parent already exists: ${existingParentId}`);
             continue;
           }
@@ -723,6 +769,9 @@ exports.batchRestoreStudents = onCall(
         const parentRef = await db.collection("parents").add(parentDocData);
         const newParentId = parentRef.id;
         parentIdMap.set(oldParentId, newParentId);
+        if (parentData.phone) {
+          parentPhoneToId.set(parentData.phone, newParentId);
+        }
         console.log(`Created parent document: ${newParentId}`);
 
         // 부모 Auth 계정 생성
@@ -779,15 +828,7 @@ exports.batchRestoreStudents = onCall(
         const studentEmail = studentPhone ? generateStudentEmail(studentPhone) : `student_${Date.now()}_${i}@academy.local`;
         const inviteCode = studentData.inviteCode || generateInviteCode();
 
-        // parentIds 매핑 변환
-        let newParentIds = [];
-        if (studentData.parentIds && studentData.parentIds.length > 0) {
-          newParentIds = studentData.parentIds
-            .map(oldId => parentIdMap.get(oldId) || oldId)
-            .filter(id => id);
-        }
-
-        // 학생 문서 생성
+        // 학생 문서 생성 (parentIds는 나중에 매핑)
         const studentDocData = {
           name: studentData.name,
           phone: studentData.phone || '',
@@ -799,34 +840,15 @@ exports.batchRestoreStudents = onCall(
           notes: studentData.notes || '',
           status: studentData.status || 'active',
           inviteCode,
-          parentIds: newParentIds,
+          parentIds: [],
           createdAt: new Date(),
           updatedAt: new Date()
         };
 
         const studentRef = await db.collection("students").add(studentDocData);
         const newStudentId = studentRef.id;
-        studentIdMap.set(studentData.id, newStudentId);
+        studentNameToId.set(studentData.name, newStudentId);
         console.log(`Created student document: ${newStudentId}`);
-
-        // 부모 문서에 학생 ID 추가
-        for (const parentId of newParentIds) {
-          try {
-            const parentDoc = await db.collection("parents").doc(parentId).get();
-            if (parentDoc.exists) {
-              const parentData = parentDoc.data();
-              const currentStudentIds = parentData.studentIds || [];
-              if (!currentStudentIds.includes(newStudentId)) {
-                await db.collection("parents").doc(parentId).update({
-                  studentIds: [...currentStudentIds, newStudentId],
-                  updatedAt: new Date()
-                });
-              }
-            }
-          } catch (err) {
-            console.error(`Error updating parent ${parentId}:`, err);
-          }
-        }
 
         // 학생 Auth 계정 생성
         if (studentPhone) {
@@ -871,7 +893,175 @@ exports.batchRestoreStudents = onCall(
       }
     }
 
-    console.log(`Batch restore completed: ${results.createdStudents} students, ${results.createdParents} parents, ${results.createdAuthUsers} auth users`);
+    // 3. parentChildMap을 이용하여 학부모-학생 연결
+    // parentChildMap 형식: { "부모전화번호": ["자녀이름1", "자녀이름2"], ... }
+    console.log(`Linking parents and students using parentChildMap...`);
+
+    for (const [parentPhone, childNames] of Object.entries(parentChildMap)) {
+      if (!Array.isArray(childNames) || childNames.length === 0) continue;
+
+      const parentId = parentPhoneToId.get(parentPhone);
+      if (!parentId) {
+        console.log(`Parent not found for phone: ${parentPhone}`);
+        continue;
+      }
+
+      const linkedStudentIds = [];
+      for (const childName of childNames) {
+        const studentId = studentNameToId.get(childName);
+        if (studentId) {
+          linkedStudentIds.push(studentId);
+
+          // 학생 문서에 parentId 추가
+          try {
+            const studentDoc = await db.collection("students").doc(studentId).get();
+            if (studentDoc.exists) {
+              const studentData = studentDoc.data();
+              const currentParentIds = studentData.parentIds || [];
+              if (!currentParentIds.includes(parentId)) {
+                await db.collection("students").doc(studentId).update({
+                  parentIds: [...currentParentIds, parentId],
+                  updatedAt: new Date()
+                });
+                results.linkedParentStudent++;
+                console.log(`Linked student ${childName} to parent ${parentPhone}`);
+              }
+            }
+          } catch (err) {
+            console.error(`Error linking student ${childName}:`, err);
+          }
+        } else {
+          console.log(`Student not found for name: ${childName}`);
+        }
+      }
+
+      // 부모 문서에 studentIds 추가
+      if (linkedStudentIds.length > 0) {
+        try {
+          const parentDoc = await db.collection("parents").doc(parentId).get();
+          if (parentDoc.exists) {
+            const pData = parentDoc.data();
+            const currentStudentIds = pData.studentIds || [];
+            const newStudentIds = [...new Set([...currentStudentIds, ...linkedStudentIds])];
+            await db.collection("parents").doc(parentId).update({
+              studentIds: newStudentIds,
+              updatedAt: new Date()
+            });
+            console.log(`Updated parent ${parentId} with ${linkedStudentIds.length} children`);
+          }
+        } catch (err) {
+          console.error(`Error updating parent ${parentId}:`, err);
+        }
+      }
+    }
+
+    console.log(`Batch restore completed: ${results.createdStudents} students, ${results.createdParents} parents, ${results.createdAuthUsers} auth users, ${results.linkedParentStudent} links`);
+    return results;
+  }
+);
+
+/**
+ * 모든 guardian(학부모) 계정 삭제 (Admin 전용)
+ * guardian_로 시작하는 이메일을 가진 Auth 계정을 모두 삭제
+ */
+exports.deleteAllGuardians = onCall(
+  {
+    region: "asia-northeast3",
+    timeoutSeconds: 540,
+    memory: "512MiB"
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "인증이 필요합니다.");
+    }
+
+    // 호출자가 관리자인지 확인
+    const callerUid = request.auth.uid;
+    try {
+      const adminDoc = await db.collection("admins").doc(callerUid).get();
+      if (!adminDoc.exists) {
+        throw new HttpsError("permission-denied", "관리자만 실행할 수 있습니다.");
+      }
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("internal", "관리자 권한 확인 중 오류가 발생했습니다.");
+    }
+
+    console.log("Starting to delete all guardian accounts...");
+
+    const results = {
+      success: true,
+      deletedAuthUsers: 0,
+      deletedParentDocs: 0,
+      deletedAuthMappings: 0,
+      errors: []
+    };
+
+    try {
+      // 1. guardian_ 이메일을 가진 Auth 사용자 목록 가져오기
+      const guardianUids = [];
+      let nextPageToken;
+
+      do {
+        const listResult = await auth.listUsers(1000, nextPageToken);
+
+        for (const user of listResult.users) {
+          if (user.email && user.email.startsWith('guardian_')) {
+            guardianUids.push(user.uid);
+            console.log(`Found guardian: ${user.email}`);
+          }
+        }
+
+        nextPageToken = listResult.pageToken;
+      } while (nextPageToken);
+
+      console.log(`Found ${guardianUids.length} guardian accounts to delete`);
+
+      // 2. Auth 계정 일괄 삭제
+      if (guardianUids.length > 0) {
+        // Firebase는 한 번에 최대 1000개까지 삭제 가능
+        for (let i = 0; i < guardianUids.length; i += 1000) {
+          const batch = guardianUids.slice(i, i + 1000);
+          const deleteResult = await auth.deleteUsers(batch);
+          results.deletedAuthUsers += deleteResult.successCount;
+          console.log(`Deleted ${deleteResult.successCount} auth users (batch ${Math.floor(i/1000) + 1})`);
+        }
+      }
+
+      // 3. parents 컬렉션 삭제
+      const parentsSnapshot = await db.collection("parents").get();
+      for (const doc of parentsSnapshot.docs) {
+        await doc.ref.delete();
+        results.deletedParentDocs++;
+      }
+      console.log(`Deleted ${results.deletedParentDocs} parent documents`);
+
+      // 4. authMappings에서 guardian_ 삭제
+      const mappingsSnapshot = await db.collection("authMappings").get();
+      for (const doc of mappingsSnapshot.docs) {
+        if (doc.id.startsWith('guardian_')) {
+          await doc.ref.delete();
+          results.deletedAuthMappings++;
+        }
+      }
+      console.log(`Deleted ${results.deletedAuthMappings} auth mappings`);
+
+      // 5. students의 parentIds 초기화
+      const studentsSnapshot = await db.collection("students").get();
+      for (const doc of studentsSnapshot.docs) {
+        const data = doc.data();
+        if (data.parentIds && data.parentIds.length > 0) {
+          await doc.ref.update({ parentIds: [], updatedAt: new Date() });
+        }
+      }
+      console.log(`Cleared parentIds from all students`);
+
+    } catch (error) {
+      console.error("Error in deleteAllGuardians:", error);
+      results.errors.push({ error: error.message });
+    }
+
+    console.log(`Delete all guardians completed: ${results.deletedAuthUsers} auth, ${results.deletedParentDocs} docs, ${results.deletedAuthMappings} mappings`);
     return results;
   }
 );

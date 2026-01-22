@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { StudentAttendanceStats } from '../../types/statistics';
 import type { Attendance } from '../../types';
+import { deduplicateAttendances } from '../../services/statisticsService';
 import AttendanceGauge from './AttendanceGauge';
 import RiskIndicator from './RiskIndicator';
 import CalendarHeatmap from './CalendarHeatmap';
@@ -38,36 +39,33 @@ export default function StudentReportCard({
   overallAvgRate = 82,
   onClose
 }: StudentReportCardProps) {
-  // 학생의 출석 기록으로 캘린더 데이터 생성
-  const calendarData = useMemo(() => {
+  // 캘린더에서 선택한 날짜의 출석 정보
+  const [selectedDateInfo, setSelectedDateInfo] = useState<{
+    date: string;
+    attendance: Attendance | null;
+  } | null>(null);
+
+  // 중복 제거된 학생 출석 데이터 (같은 날짜에 여러 기록이 있으면 최신 것만)
+  const deduplicatedStudentAttendances = useMemo(() => {
     const studentAttendances = attendances.filter(a => a.studentId === student.studentId);
-
-    // 날짜별로 그룹화
-    const dateMap = new Map<string, Attendance[]>();
-    studentAttendances.forEach(a => {
-      if (!dateMap.has(a.date)) {
-        dateMap.set(a.date, []);
-      }
-      dateMap.get(a.date)!.push(a);
-    });
-
-    return Array.from(dateMap.entries()).map(([date, records]) => {
-      const present = records.filter(r => r.status === 'present' || r.status === 'late').length;
-      const total = records.length;
-      return {
-        date,
-        value: total > 0 ? Math.round((present / total) * 100) : -1,
-        status: records[0]?.status
-      };
-    });
+    return deduplicateAttendances(studentAttendances);
   }, [attendances, student.studentId]);
 
-  // 월별 데이터
+  // 학생의 출석 기록으로 캘린더 데이터 생성
+  const calendarData = useMemo(() => {
+    // 중복 제거된 데이터를 사용하므로 날짜별로 하나의 기록만 있음
+    return deduplicatedStudentAttendances.map(a => ({
+      date: a.date,
+      value: a.status === 'present' || a.status === 'late' ? 100 : 0,
+      status: a.status
+    }));
+  }, [deduplicatedStudentAttendances]);
+
+  // 월별 데이터 (중복 제거된 데이터 사용)
   const monthlyData = useMemo(() => {
-    const studentAttendances = attendances.filter(a => a.studentId === student.studentId);
     const monthMap = new Map<string, { present: number; late: number; absent: number; total: number }>();
 
-    studentAttendances.forEach(a => {
+    deduplicatedStudentAttendances.forEach(a => {
       const month = a.date.substring(0, 7); // YYYY-MM
       if (!monthMap.has(month)) {
         monthMap.set(month, { present: 0, late: 0, absent: 0, total: 0 });
@@ -87,14 +85,13 @@ export default function StudentReportCard({
         ...data,
         attendanceRate: data.total > 0 ? ((data.present + data.late) / data.total) * 100 : 0
       }));
-  }, [attendances, student.studentId]);
+  }, [deduplicatedStudentAttendances]);
 
-  // 요일별 데이터
+  // 요일별 데이터 (중복 제거된 데이터 사용)
   const dayPatternData = useMemo(() => {
-    const studentAttendances = attendances.filter(a => a.studentId === student.studentId);
     const dayMap = new Map<number, { present: number; late: number; absent: number; total: number }>();
 
-    studentAttendances.forEach(a => {
+    deduplicatedStudentAttendances.forEach(a => {
       const day = new Date(a.date).getDay();
       if (!dayMap.has(day)) {
         dayMap.set(day, { present: 0, late: 0, absent: 0, total: 0 });
@@ -113,14 +110,13 @@ export default function StudentReportCard({
       ...data,
       attendanceRate: data.total > 0 ? ((data.present + data.late) / data.total) * 100 : 0
     }));
-  }, [attendances, student.studentId]);
+  }, [deduplicatedStudentAttendances]);
 
-  // 시간대별 데이터
+  // 시간대별 데이터 (중복 제거된 데이터 사용)
   const timeDistributionData = useMemo(() => {
-    const studentAttendances = attendances.filter(a => a.studentId === student.studentId);
     const hourMap = new Map<number, { count: number; presentCount: number; lateCount: number }>();
 
-    studentAttendances.forEach(a => {
+    deduplicatedStudentAttendances.forEach(a => {
       if (a.checkInTime) {
         const hour = parseInt(a.checkInTime.split(':')[0], 10);
         if (!hourMap.has(hour)) {
@@ -137,12 +133,11 @@ export default function StudentReportCard({
       hour,
       ...data
     }));
-  }, [attendances, student.studentId]);
+  }, [deduplicatedStudentAttendances]);
 
-  // 연속 출석 데이터
+  // 연속 출석 데이터 (중복 제거된 데이터 사용)
   const streakData = useMemo(() => {
-    const studentAttendances = attendances
-      .filter(a => a.studentId === student.studentId)
+    const sortedAttendances = [...deduplicatedStudentAttendances]
       .sort((a, b) => a.date.localeCompare(b.date));
 
     let currentStreak = 0;
@@ -151,7 +146,7 @@ export default function StudentReportCard({
     const streakHistory: Array<{ startDate: string; endDate: string; length: number }> = [];
     let streakStart = '';
 
-    studentAttendances.forEach((a, i) => {
+    sortedAttendances.forEach((a, i) => {
       const isPresent = a.status === 'present' || a.status === 'late';
 
       if (isPresent) {
@@ -163,7 +158,7 @@ export default function StudentReportCard({
         if (tempStreak > 0) {
           streakHistory.push({
             startDate: streakStart,
-            endDate: studentAttendances[i - 1]?.date || streakStart,
+            endDate: sortedAttendances[i - 1]?.date || streakStart,
             length: tempStreak
           });
           if (tempStreak > longestStreak) longestStreak = tempStreak;
@@ -171,7 +166,7 @@ export default function StudentReportCard({
         tempStreak = 0;
       }
 
-      if (i === studentAttendances.length - 1 && tempStreak > 0) {
+      if (i === sortedAttendances.length - 1 && tempStreak > 0) {
         currentStreak = tempStreak;
         streakHistory.push({
           startDate: streakStart,
@@ -182,7 +177,7 @@ export default function StudentReportCard({
       }
     });
 
-    const totalDays = studentAttendances.filter(a =>
+    const totalDays = sortedAttendances.filter(a =>
       a.status === 'present' || a.status === 'late'
     ).length;
 
@@ -192,7 +187,7 @@ export default function StudentReportCard({
       totalDays,
       streakHistory: streakHistory.sort((a, b) => b.length - a.length).slice(0, 5)
     };
-  }, [attendances, student.studentId]);
+  }, [deduplicatedStudentAttendances]);
 
   // 비교 데이터
   const comparisonData = useMemo(() => {
@@ -305,7 +300,7 @@ export default function StudentReportCard({
             <div className="bg-gray-50 rounded-xl p-4">
               <RiskIndicator
                 score={riskScore}
-                label="이탈 위험도"
+                label="출석 관리 필요도"
                 size="lg"
                 showDetails
                 factors={riskFactors}
@@ -382,8 +377,78 @@ export default function StudentReportCard({
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <CalendarDaysIcon size={16} className="text-indigo-500" />
               출석 현황 캘린더
+              <span className="text-xs font-normal text-gray-400">(날짜를 클릭하면 상세 정보를 볼 수 있습니다)</span>
             </h3>
-            <CalendarHeatmap data={calendarData} />
+            <CalendarHeatmap
+              data={calendarData}
+              onDateClick={(date) => {
+                const attendance = deduplicatedStudentAttendances.find(a => a.date === date) || null;
+                setSelectedDateInfo({ date, attendance });
+              }}
+            />
+
+            {/* 선택된 날짜 정보 팝업 */}
+            {selectedDateInfo && (
+              <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <CalendarDaysIcon size={16} className="text-indigo-500" />
+                    <span className="font-semibold text-gray-800">
+                      {new Date(selectedDateInfo.date).toLocaleDateString('ko-KR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        weekday: 'short'
+                      })}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedDateInfo(null)}
+                    className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <XIcon className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+
+                {selectedDateInfo.attendance ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-600">출석 상태:</span>
+                      <span className={`text-sm font-medium px-2 py-1 rounded ${
+                        selectedDateInfo.attendance.status === 'present' ? 'bg-green-100 text-green-700' :
+                        selectedDateInfo.attendance.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                        selectedDateInfo.attendance.status === 'absent' ? 'bg-red-100 text-red-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {selectedDateInfo.attendance.status === 'present' ? '출석' :
+                         selectedDateInfo.attendance.status === 'late' ? '지각' :
+                         selectedDateInfo.attendance.status === 'absent' ? '결석' : '사유결석'}
+                      </span>
+                    </div>
+                    {selectedDateInfo.attendance.checkInTime && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-600">체크인 시간:</span>
+                        <span className="text-sm font-medium text-gray-800">
+                          {selectedDateInfo.attendance.checkInTime}
+                        </span>
+                      </div>
+                    )}
+                    {selectedDateInfo.attendance.absentReason && (
+                      <div className="flex items-start gap-3">
+                        <span className="text-sm text-gray-600">사유:</span>
+                        <span className="text-sm text-gray-800">
+                          {selectedDateInfo.attendance.absentReason}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    해당 날짜에 출석 기록이 없습니다.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 개인화 통계 차트들 */}

@@ -1,12 +1,18 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useStore } from '../store/useStore';
+import { deduplicateAttendances } from '../services/statisticsService';
 
 export default function Dashboard() {
   const { classes, students, attendances } = useStore();
 
   const today = new Date().toISOString().split('T')[0];
-  const todayAttendances = attendances.filter((a) => a.date === today);
+  // 중복 제거 적용: 같은 학생이 같은 날 여러번 출석 체크해도 마지막 것만 카운트
+  const todayAttendances = useMemo(() => {
+    const filtered = attendances.filter((a) => a.date === today);
+    return deduplicateAttendances(filtered);
+  }, [attendances, today]);
 
   const presentCount = todayAttendances.filter((a) => a.status === 'present').length;
   const lateCount = todayAttendances.filter((a) => a.status === 'late').length;

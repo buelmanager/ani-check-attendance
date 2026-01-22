@@ -61,6 +61,7 @@ export interface Parent {
   name: string;
   email: string;
   phone?: string;
+  relationType?: 'father' | 'mother' | 'guardian';  // 관계 유형
   studentIds: string[];    // 연결된 자녀 IDs
   createdAt: string;
 }

@@ -6,7 +6,7 @@ import { studentService } from '../../services/studentService';
 import { parentService, RelationType } from '../../services/parentService';
 import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup, readStudentsFromExcel, readParentsFromExcel } from '../../utils/excelExport';
 import { demoStudents } from '../../data/demoStudents';
-import { batchCreateStudents, BatchStudentData, batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData } from '../../lib/firebase';
+import { batchCreateStudents, BatchStudentData, batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData, ParentChildMap, deleteAllGuardians } from '../../lib/firebase';
 import type { Student, StudentStatus, GradeLevel, Parent } from '../../types';
 
 // 보호자 입력 폼 데이터 타입
@@ -103,11 +103,16 @@ export default function AdminStudents() {
   // 일괄 삭제 관련 상태
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{
-    current: number;
+    phase: 'processing' | 'done';
     total: number;
     currentName: string;
-    deletedCount: number;
+    deletedStudents: number;
+    deletedParents: number;
+    deletedAuth: number;
   } | null>(null);
+
+  // 학부모 Auth 계정 일괄 삭제 상태
+  const [isDeletingGuardians, setIsDeletingGuardians] = useState(false);
 
   // 데모 데이터 등록 관련 상태
   const [isDemoLoading, setIsDemoLoading] = useState(false);
@@ -123,12 +128,13 @@ export default function AdminStudents() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<{
-    phase: 'reading' | 'students' | 'parents' | 'done';
+    phase: 'reading' | 'students' | 'parents' | 'linking' | 'done';
     current: number;
     total: number;
     currentName: string;
     studentsDone: number;
     parentsDone: number;
+    linkedCount: number;
   } | null>(null);
   const [importResult, setImportResult] = useState<{
     students: {
@@ -340,10 +346,12 @@ export default function AdminStudents() {
 
     setIsBulkDeleting(true);
     setBulkDeleteProgress({
-      current: 0,
+      phase: 'processing',
       total: selectedCount,
-      currentName: '서버에서 삭제 처리 중...',
-      deletedCount: 0,
+      currentName: '서버에서 학생/부모/Auth 삭제 중...',
+      deletedStudents: 0,
+      deletedParents: 0,
+      deletedAuth: 0,
     });
 
     const selectedIds = Array.from(selectedStudentIds);
@@ -352,31 +360,50 @@ export default function AdminStudents() {
       // Cloud Function을 통해 일괄 삭제 (서버에서 처리)
       const result = await batchDeleteStudents(selectedIds, true);
 
-      // 로컬 store에서도 삭제된 학생 제거 (UI 즉시 반영)
-      for (const studentId of selectedIds) {
-        try {
-          // store의 deleteStudent는 이미 서버에서 삭제됐으므로 로컬만 업데이트
-          await deleteStudent(studentId);
-        } catch {
-          // 이미 삭제된 경우 무시
-        }
-      }
+      // 완료 상태로 업데이트
+      setBulkDeleteProgress({
+        phase: 'done',
+        total: selectedCount,
+        currentName: '삭제 완료!',
+        deletedStudents: result.deletedStudents,
+        deletedParents: result.deletedParents,
+        deletedAuth: result.deletedAuthUsers || 0,
+      });
 
       // 선택 초기화
       setSelectedStudentIds(new Set());
 
-      // 결과 표시
-      if (result.errors.length > 0) {
-        alert(`일괄 삭제 완료!\n${result.deletedStudents}명의 학생이 삭제되었습니다.\n${result.deletedParents}명의 부모가 삭제되었습니다.\n\n일부 오류 발생: ${result.errors.length}건`);
-      } else {
-        alert(`일괄 삭제 완료!\n${result.deletedStudents}명의 학생이 삭제되었습니다.\n${result.deletedParents}명의 부모가 삭제되었습니다.`);
-      }
+      // 2초 후 모달 닫기
+      setTimeout(() => {
+        setIsBulkDeleting(false);
+        setBulkDeleteProgress(null);
+      }, 2000);
+
     } catch (error) {
       console.error('Error in bulk delete:', error);
-      alert('일괄 삭제 중 오류가 발생했습니다.');
-    } finally {
+      alert('일괄 삭제 중 오류가 발생했습니다. 다시 시도해주세요.');
       setIsBulkDeleting(false);
       setBulkDeleteProgress(null);
+    }
+  };
+
+  // 학부모 Auth 계정 일괄 삭제 핸들러
+  const handleDeleteAllGuardians = async () => {
+    if (!confirm('모든 학부모의 Firebase Authentication 계정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.')) return;
+
+    setIsDeletingGuardians(true);
+    try {
+      const result = await deleteAllGuardians();
+      if (result.success) {
+        alert(`학부모 계정 삭제 완료!\n\n삭제된 Auth 계정: ${result.deletedAuthUsers}건\n삭제된 부모 문서: ${result.deletedParentDocs}건\n삭제된 매핑: ${result.deletedAuthMappings}건`);
+      } else {
+        alert(`일부 오류 발생:\n${result.errors.map(e => e.error).join('\n')}`);
+      }
+    } catch (error) {
+      console.error('Error deleting guardians:', error);
+      alert('학부모 계정 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsDeletingGuardians(false);
     }
   };
 
@@ -494,7 +521,8 @@ export default function AdminStudents() {
       total: 0,
       currentName: '파일 읽는 중...',
       studentsDone: 0,
-      parentsDone: 0
+      parentsDone: 0,
+      linkedCount: 0
     });
     setShowImportModal(true);
 
@@ -511,27 +539,12 @@ export default function AdminStudents() {
       setImportProgress({
         phase: 'students',
         current: 0,
-        total: totalStudents,
-        currentName: '서버에서 처리 중...',
+        total: totalStudents + totalParents,
+        currentName: '서버에서 학생/부모 생성 및 연결 중...',
         studentsDone: 0,
-        parentsDone: 0
+        parentsDone: 0,
+        linkedCount: 0
       });
-
-      // 학생별 부모 정보 매핑 (엑셀에서 부모 정보가 있는 경우)
-      const studentParentMap: Record<string, { name: string; phone: string }[]> = {};
-      for (const parentData of parentsData) {
-        if (parentData.childNames) {
-          for (const childName of parentData.childNames) {
-            if (!studentParentMap[childName]) {
-              studentParentMap[childName] = [];
-            }
-            studentParentMap[childName].push({
-              name: parentData.name,
-              phone: parentData.phone || ''
-            });
-          }
-        }
-      }
 
       // RestoreStudentData 형식으로 변환
       const restoreStudents: RestoreStudentData[] = studentsData.map(s => ({
@@ -562,17 +575,28 @@ export default function AdminStudents() {
       }
       const restoreParents: RestoreParentData[] = Array.from(uniqueParents.values());
 
-      // Cloud Function 호출
-      const result = await batchRestoreStudents(restoreStudents, restoreParents);
+      // parentChildMap 생성: { "부모전화번호": ["자녀이름1", "자녀이름2"], ... }
+      const parentChildMap: ParentChildMap = {};
+      for (const parentData of parentsData) {
+        if (parentData.phone && parentData.childNames && parentData.childNames.length > 0) {
+          parentChildMap[parentData.phone] = parentData.childNames;
+        }
+      }
 
-      // 완료
+      console.log('[handleImportExcel] parentChildMap:', parentChildMap);
+
+      // Cloud Function 호출
+      const result = await batchRestoreStudents(restoreStudents, restoreParents, parentChildMap);
+
+      // 완료 상태 표시
       setImportProgress({
         phase: 'done',
-        current: totalStudents,
-        total: totalStudents,
-        currentName: '완료!',
+        current: totalStudents + totalParents,
+        total: totalStudents + totalParents,
+        currentName: '모든 처리 완료!',
         studentsDone: result.createdStudents,
-        parentsDone: result.createdParents
+        parentsDone: result.createdParents,
+        linkedCount: result.linkedParentStudent || 0
       });
 
       // 결과 설정
@@ -580,7 +604,7 @@ export default function AdminStudents() {
         students: {
           total: totalStudents,
           success: result.createdStudents,
-          linked: 0,
+          linked: result.linkedParentStudent || 0,
           created: result.createdAuthUsers,
           failed: result.errors.filter(e => e.type === 'student').length,
           errors: result.errors.filter(e => e.type === 'student').map(e => `${e.name}: ${e.error}`)
@@ -588,22 +612,35 @@ export default function AdminStudents() {
         parents: {
           total: totalParents,
           success: result.createdParents,
-          linked: 0,
+          linked: result.linkedParentStudent || 0,
           created: result.createdAuthUsers,
           failed: result.errors.filter(e => e.type === 'parent').length,
           errors: result.errors.filter(e => e.type === 'parent').map(e => `${e.name}: ${e.error}`)
         }
       });
+
+      // 2초 후 결과 모달로 전환
+      setTimeout(() => {
+        setIsImporting(false);
+      }, 2000);
+
+      // 파일 input 초기화
+      e.target.value = '';
     } catch (error) {
       console.error('Error importing data:', error);
       alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
       setShowImportModal(false);
-    } finally {
-      setIsImporting(false);
       setImportProgress(null);
-      // 파일 input 초기화
+      setIsImporting(false);
       e.target.value = '';
     }
+  };
+
+  // 가져오기 모달 닫기
+  const closeImportModal = () => {
+    setShowImportModal(false);
+    setImportProgress(null);
+    setImportResult(null);
   };
 
   // 데모 데이터 등록 (Cloud Function 사용)
@@ -705,6 +742,18 @@ export default function AdminStudents() {
               </span>
             </button>
           )}
+          {/* 학부모 Auth 일괄 삭제 버튼 */}
+          <button
+            onClick={handleDeleteAllGuardians}
+            disabled={isDeletingGuardians}
+            className="btn-outline flex items-center justify-center gap-2 px-4 py-2 border-orange-500 text-orange-600 hover:bg-orange-50 disabled:opacity-50"
+            title="모든 학부모의 Firebase Authentication 계정을 삭제합니다"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            {isDeletingGuardians ? '삭제 중...' : '학부모 Auth 삭제'}
+          </button>
           {/* 엑셀 내보내기 드롭다운 */}
           <div className="relative group">
             <button
@@ -1497,9 +1546,13 @@ export default function AdminStudents() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" />
           <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-2">데이터 복원 중...</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              {importProgress.phase === 'done' ? '복원 완료!' : '데이터 복원 중...'}
+            </h2>
             <p className="text-gray-500 mb-6">
-              잠시만 기다려주세요. 창을 닫지 마세요.
+              {importProgress.phase === 'done'
+                ? '모든 데이터가 복원되었습니다.'
+                : '잠시만 기다려주세요. 창을 닫지 마세요.'}
             </p>
 
             <div className="space-y-4">
@@ -1508,46 +1561,61 @@ export default function AdminStudents() {
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600">
                     {importProgress.phase === 'reading' && '파일 읽는 중...'}
-                    {importProgress.phase === 'students' && `학생 처리 중 (${importProgress.current}/${importProgress.total})`}
-                    {importProgress.phase === 'parents' && `부모 등록 중 (${importProgress.current}/${importProgress.total})`}
+                    {importProgress.phase === 'students' && '서버에서 처리 중...'}
+                    {importProgress.phase === 'parents' && '부모 등록 중...'}
+                    {importProgress.phase === 'linking' && '부모-자녀 연결 중...'}
                     {importProgress.phase === 'done' && '완료!'}
                   </span>
                   <span className="text-gray-500">
-                    {importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0}%
+                    {importProgress.phase === 'done' ? '100%' : '처리 중...'}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3">
                   <div
-                    className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                    style={{ width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%` }}
+                    className={`h-3 rounded-full transition-all duration-500 ${
+                      importProgress.phase === 'done' ? 'bg-green-500' : 'bg-blue-500 animate-pulse'
+                    }`}
+                    style={{ width: importProgress.phase === 'done' ? '100%' : '60%' }}
                   />
                 </div>
               </div>
 
               {/* 현재 처리 중인 항목 */}
               <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">현재 처리 중:</p>
+                <p className="text-sm text-gray-600 mb-1">
+                  {importProgress.phase === 'done' ? '처리 결과:' : '현재 처리 중:'}
+                </p>
                 <p className="font-medium text-gray-900 truncate">{importProgress.currentName}</p>
               </div>
 
-              {/* 완료된 수 */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* 완료된 수 - 학생/부모/연결 분리 표시 */}
+              <div className="grid grid-cols-3 gap-3">
                 <div className="bg-blue-50 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-blue-600">{importProgress.studentsDone}</p>
-                  <p className="text-xs text-gray-500">학생 완료</p>
+                  <p className="text-xs text-gray-500">학생 생성</p>
                 </div>
                 <div className="bg-purple-50 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-purple-600">{importProgress.parentsDone}</p>
-                  <p className="text-xs text-gray-500">부모 완료</p>
+                  <p className="text-xs text-gray-500">부모 생성</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{importProgress.linkedCount}</p>
+                  <p className="text-xs text-gray-500">연결 완료</p>
                 </div>
               </div>
 
-              {/* 로딩 애니메이션 */}
+              {/* 로딩/완료 애니메이션 */}
               <div className="flex justify-center">
-                <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                {importProgress.phase === 'done' ? (
+                  <svg className="h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
               </div>
             </div>
           </div>
@@ -1557,7 +1625,7 @@ export default function AdminStudents() {
       {/* 엑셀 가져오기 결과 모달 */}
       {showImportModal && !isImporting && importResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setShowImportModal(false)} />
+          <div className="absolute inset-0 bg-black/60" onClick={closeImportModal} />
           <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-2xl p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-2">가져오기 완료</h2>
             <p className="text-gray-500 mb-6">
@@ -1654,10 +1722,7 @@ export default function AdminStudents() {
 
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => {
-                  setShowImportModal(false);
-                  setImportResult(null);
-                }}
+                onClick={closeImportModal}
                 className="w-full btn-primary"
               >
                 확인
@@ -1804,9 +1869,13 @@ export default function AdminStudents() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" />
           <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-2">일괄 삭제 중...</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              {bulkDeleteProgress.phase === 'done' ? '삭제 완료!' : '일괄 삭제 중...'}
+            </h2>
             <p className="text-gray-500 mb-6">
-              잠시만 기다려주세요. 창을 닫지 마세요.
+              {bulkDeleteProgress.phase === 'done'
+                ? '모든 데이터가 삭제되었습니다.'
+                : '잠시만 기다려주세요. 창을 닫지 마세요.'}
             </p>
 
             <div className="space-y-4">
@@ -1814,38 +1883,60 @@ export default function AdminStudents() {
               <div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600">
-                    삭제 중 ({bulkDeleteProgress.current}/{bulkDeleteProgress.total})
+                    {bulkDeleteProgress.phase === 'done'
+                      ? `완료 (${bulkDeleteProgress.total}명)`
+                      : `삭제 중 (${bulkDeleteProgress.total}명)`}
                   </span>
                   <span className="text-gray-500">
-                    {Math.round((bulkDeleteProgress.current / bulkDeleteProgress.total) * 100)}%
+                    {bulkDeleteProgress.phase === 'done' ? '100%' : '처리 중...'}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3">
                   <div
-                    className="bg-red-500 h-3 rounded-full transition-all duration-300"
-                    style={{ width: `${(bulkDeleteProgress.current / bulkDeleteProgress.total) * 100}%` }}
+                    className={`h-3 rounded-full transition-all duration-500 ${
+                      bulkDeleteProgress.phase === 'done' ? 'bg-green-500' : 'bg-red-500 animate-pulse'
+                    }`}
+                    style={{ width: bulkDeleteProgress.phase === 'done' ? '100%' : '60%' }}
                   />
                 </div>
               </div>
 
               {/* 현재 처리 중인 항목 */}
               <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">현재 처리 중:</p>
+                <p className="text-sm text-gray-600 mb-1">
+                  {bulkDeleteProgress.phase === 'done' ? '처리 결과:' : '현재 처리 중:'}
+                </p>
                 <p className="font-medium text-gray-900 truncate">{bulkDeleteProgress.currentName}</p>
               </div>
 
-              {/* 삭제된 수 */}
-              <div className="bg-red-50 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-red-600">{bulkDeleteProgress.deletedCount}</p>
-                <p className="text-sm text-gray-500">삭제 완료</p>
+              {/* 삭제된 수 - 학생/부모/Auth 분리 표시 */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{bulkDeleteProgress.deletedStudents}</p>
+                  <p className="text-xs text-gray-500">학생 삭제</p>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-orange-600">{bulkDeleteProgress.deletedParents}</p>
+                  <p className="text-xs text-gray-500">부모 삭제</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-purple-600">{bulkDeleteProgress.deletedAuth}</p>
+                  <p className="text-xs text-gray-500">Auth 삭제</p>
+                </div>
               </div>
 
-              {/* 로딩 애니메이션 */}
+              {/* 로딩/완료 애니메이션 */}
               <div className="flex justify-center">
-                <svg className="animate-spin h-8 w-8 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                {bulkDeleteProgress.phase === 'done' ? (
+                  <svg className="h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg className="animate-spin h-8 w-8 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
               </div>
             </div>
           </div>

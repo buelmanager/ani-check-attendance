@@ -16,10 +16,21 @@ export default function PersonalComparisonChart({
   studentName,
   title = '비교 분석'
 }: PersonalComparisonChartProps) {
-  const maxValue = Math.max(
-    ...data.flatMap(d => [d.studentValue, d.classAvg, d.overallAvg]),
-    100
-  );
+  // 평균 계산
+  const avgVsClass = data.length > 0
+    ? data.reduce((sum, d) => sum + (d.studentValue - d.classAvg), 0) / data.length
+    : 0;
+  const avgVsOverall = data.length > 0
+    ? data.reduce((sum, d) => sum + (d.studentValue - d.overallAvg), 0) / data.length
+    : 0;
+
+  // 학생의 평균 출석률
+  const studentAvg = data.length > 0
+    ? data.reduce((sum, d) => sum + d.studentValue, 0) / data.length
+    : 0;
+
+  // 상위 퍼센트 계산 (간단한 추정)
+  const topPercent = Math.max(1, Math.round((100 - studentAvg) * 0.5));
 
   return (
     <div>
@@ -27,75 +38,94 @@ export default function PersonalComparisonChart({
         <h4 className="text-sm font-semibold text-gray-700 mb-4">{title}</h4>
       )}
 
-      {/* Legend */}
-      <div className="flex justify-center gap-4 mb-4 text-xs">
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-indigo-500" />
-          <span className="text-gray-600">{studentName}</span>
+      {/* 요약 카드 */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className={`rounded-xl p-4 text-center ${avgVsClass >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`text-2xl font-bold ${avgVsClass >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+            {avgVsClass >= 0 ? '+' : ''}{avgVsClass.toFixed(1)}%
+          </div>
+          <div className="text-xs text-gray-600 mt-1">반 평균 대비</div>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-emerald-400" />
-          <span className="text-gray-600">반 평균</span>
+        <div className={`rounded-xl p-4 text-center ${avgVsOverall >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`text-2xl font-bold ${avgVsOverall >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+            {avgVsOverall >= 0 ? '+' : ''}{avgVsOverall.toFixed(1)}%
+          </div>
+          <div className="text-xs text-gray-600 mt-1">전체 평균 대비</div>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-gray-300" />
-          <span className="text-gray-600">전체 평균</span>
+        <div className="bg-indigo-50 rounded-xl p-4 text-center">
+          <div className="text-2xl font-bold text-indigo-600">
+            Top {topPercent}%
+          </div>
+          <div className="text-xs text-gray-600 mt-1">전체 순위</div>
         </div>
       </div>
 
-      {/* Horizontal bar chart */}
+      {/* 상세 비교 */}
       <div className="space-y-4">
         {data.map((item, i) => {
-          const studentWidth = (item.studentValue / maxValue) * 100;
-          const classWidth = (item.classAvg / maxValue) * 100;
-          const overallWidth = (item.overallAvg / maxValue) * 100;
-          const isAboveAvg = item.studentValue >= item.classAvg;
+          const diffFromClass = item.studentValue - item.classAvg;
+          const isAboveClass = diffFromClass >= 0;
 
           return (
-            <div key={i}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium text-gray-700">{item.label}</span>
-                <span className={`text-sm font-bold ${
-                  isAboveAvg ? 'text-green-600' : 'text-red-500'
-                }`}>
-                  {item.studentValue.toFixed(1)}%
-                  {isAboveAvg ? (
-                    <span className="text-xs ml-1 text-green-500">
-                      +{(item.studentValue - item.classAvg).toFixed(1)}
-                    </span>
-                  ) : (
-                    <span className="text-xs ml-1 text-red-400">
-                      {(item.studentValue - item.classAvg).toFixed(1)}
-                    </span>
-                  )}
-                </span>
+            <div key={i} className="bg-gray-50 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-semibold text-gray-700">{item.label}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xl font-bold ${isAboveClass ? 'text-green-600' : 'text-red-500'}`}>
+                    {item.studentValue.toFixed(0)}%
+                  </span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    isAboveClass ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                  }`}>
+                    {isAboveClass ? '↑' : '↓'} {Math.abs(diffFromClass).toFixed(1)}%
+                  </span>
+                </div>
               </div>
 
-              <div className="space-y-1">
-                {/* Student bar */}
-                <div className="relative h-4 bg-gray-100 rounded overflow-hidden">
-                  <div
-                    className={`absolute top-0 left-0 h-full rounded transition-all ${
-                      isAboveAvg ? 'bg-indigo-500' : 'bg-indigo-400'
-                    }`}
-                    style={{ width: `${studentWidth}%` }}
-                  />
-                  {/* Class avg marker */}
-                  <div
-                    className="absolute top-0 w-0.5 h-full bg-emerald-500"
-                    style={{ left: `${classWidth}%` }}
-                  />
-                  {/* Overall avg marker */}
-                  <div
-                    className="absolute top-0 w-0.5 h-full bg-gray-400"
-                    style={{ left: `${overallWidth}%` }}
-                  />
+              {/* 비교 바 */}
+              <div className="relative h-8 bg-white rounded-lg overflow-hidden mb-2">
+                {/* 학생 바 */}
+                <div
+                  className={`absolute top-0 left-0 h-full rounded-lg ${
+                    isAboveClass ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${item.studentValue}%` }}
+                />
+                {/* 반 평균 마커 */}
+                <div
+                  className="absolute top-0 h-full w-1 bg-emerald-600 z-10"
+                  style={{ left: `${item.classAvg}%` }}
+                >
+                  <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-xs text-emerald-600 whitespace-nowrap">
+                    반 {item.classAvg.toFixed(0)}%
+                  </div>
                 </div>
+                {/* 전체 평균 마커 */}
+                <div
+                  className="absolute top-0 h-full w-1 bg-gray-400 z-10"
+                  style={{ left: `${item.overallAvg}%` }}
+                >
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-gray-500 whitespace-nowrap">
+                    전체 {item.overallAvg.toFixed(0)}%
+                  </div>
+                </div>
+              </div>
 
-                {/* Reference values */}
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>반: {item.classAvg.toFixed(1)}%</span>
-                  <span>전체: {item.overallAvg.toFixed(1)}%</span>
+              {/* 범례 */}
+              <div className="flex items-center justify-between text-xs text-gray-500 mt-4 pt-2 border-t border-gray-200">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1">
+                    <span className={`w-3 h-3 rounded ${isAboveClass ? 'bg-green-500' : 'bg-blue-500'}`} />
+                    {studentName}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded bg-emerald-600" />
+                    반 평균
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded bg-gray-400" />
+                    전체 평균
+                  </span>
                 </div>
               </div>
             </div>
@@ -103,37 +133,27 @@ export default function PersonalComparisonChart({
         })}
       </div>
 
-      {/* Summary */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-        <div className="grid grid-cols-3 gap-3 text-center">
-          <div>
-            <div className="text-xs text-gray-500">반 평균 대비</div>
-            <div className={`text-lg font-bold ${
-              data.reduce((sum, d) => sum + (d.studentValue - d.classAvg), 0) >= 0
-                ? 'text-green-600' : 'text-red-500'
-            }`}>
-              {data.reduce((sum, d) => sum + (d.studentValue - d.classAvg), 0) >= 0 ? '+' : ''}
-              {(data.reduce((sum, d) => sum + (d.studentValue - d.classAvg), 0) / data.length).toFixed(1)}%
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500">전체 평균 대비</div>
-            <div className={`text-lg font-bold ${
-              data.reduce((sum, d) => sum + (d.studentValue - d.overallAvg), 0) >= 0
-                ? 'text-green-600' : 'text-red-500'
-            }`}>
-              {data.reduce((sum, d) => sum + (d.studentValue - d.overallAvg), 0) >= 0 ? '+' : ''}
-              {(data.reduce((sum, d) => sum + (d.studentValue - d.overallAvg), 0) / data.length).toFixed(1)}%
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500">상위</div>
-            <div className="text-lg font-bold text-indigo-600">
-              {/* This would be calculated based on rank */}
-              Top {Math.max(5, Math.round((1 - (data[0]?.studentValue || 0) / 100) * 100))}%
-            </div>
-          </div>
-        </div>
+      {/* 종합 평가 메시지 */}
+      <div className={`mt-4 p-4 rounded-xl text-center ${
+        avgVsClass >= 0 ? 'bg-green-50' : 'bg-yellow-50'
+      }`}>
+        {avgVsClass >= 5 ? (
+          <p className="text-sm text-green-700">
+            🌟 <strong>{studentName}</strong> 학생은 반 평균보다 <strong>{avgVsClass.toFixed(1)}%</strong> 높은 출석률을 보이고 있어요!
+          </p>
+        ) : avgVsClass >= 0 ? (
+          <p className="text-sm text-green-700">
+            👍 <strong>{studentName}</strong> 학생은 반 평균 이상의 출석률을 유지하고 있어요.
+          </p>
+        ) : avgVsClass >= -5 ? (
+          <p className="text-sm text-yellow-700">
+            💪 <strong>{studentName}</strong> 학생은 반 평균에 근접한 출석률이에요. 조금만 더 힘내요!
+          </p>
+        ) : (
+          <p className="text-sm text-yellow-700">
+            📌 <strong>{studentName}</strong> 학생의 출석률 향상이 필요해요. 함께 노력해봐요!
+          </p>
+        )}
       </div>
     </div>
   );

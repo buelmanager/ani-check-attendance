@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import Layout from '../components/Layout';
 import { useStore } from '../store/useStore';
+import { deduplicateAttendances } from '../services/statisticsService';
 
 export default function Reports() {
   const { classes, students, attendances } = useStore();
@@ -18,13 +19,16 @@ export default function Reports() {
       filteredAttendances = attendances.filter((a) => new Date(a.date) >= monthAgo);
     }
 
-    const total = filteredAttendances.length;
-    const present = filteredAttendances.filter((a) => a.status === 'present').length;
-    const late = filteredAttendances.filter((a) => a.status === 'late').length;
-    const absent = filteredAttendances.filter((a) => a.status === 'absent').length;
+    // 중복 제거: 같은 학생이 같은 날 여러번 출석 체크해도 마지막 것만 카운트
+    const deduplicated = deduplicateAttendances(filteredAttendances);
+
+    const total = deduplicated.length;
+    const present = deduplicated.filter((a) => a.status === 'present').length;
+    const late = deduplicated.filter((a) => a.status === 'late').length;
+    const absent = deduplicated.filter((a) => a.status === 'absent').length;
     const rate = total > 0 ? Math.round(((present + late) / total) * 100) : 0;
 
-    return { total, present, late, absent, rate, filteredAttendances };
+    return { total, present, late, absent, rate, filteredAttendances: deduplicated };
   }, [attendances, selectedPeriod]);
 
   const classStats = useMemo(() => {
@@ -58,8 +62,10 @@ export default function Reports() {
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
       const dayAttendances = attendances.filter((a) => a.date === dateStr);
-      const present = dayAttendances.filter((a) => a.status === 'present' || a.status === 'late').length;
-      const total = dayAttendances.length || 1;
+      // 중복 제거 적용
+      const deduplicated = deduplicateAttendances(dayAttendances);
+      const present = deduplicated.filter((a) => a.status === 'present' || a.status === 'late').length;
+      const total = deduplicated.length || 1;
 
       data.push({
         day: days[date.getDay()],

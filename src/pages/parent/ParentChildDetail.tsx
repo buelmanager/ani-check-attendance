@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ParentLayout } from '../../components/parent/ParentLayout';
 import { studentService } from '../../services/studentService';
 import { classService } from '../../services/classService';
 import { attendanceService } from '../../services/attendanceService';
+import { deduplicateAttendances } from '../../services/statisticsService';
 import type { Student, Class, Attendance } from '../../types';
 
 export default function ParentChildDetail() {
@@ -55,11 +56,15 @@ export default function ParentChildDetail() {
     };
   }, [id, parentData, navigate]);
 
-  // 선택된 월의 출석 기록
-  const monthlyAttendances = attendances.filter(a => {
-    const date = new Date(a.date);
-    return date.getMonth() === selectedMonth && date.getFullYear() === selectedYear;
-  });
+  // 선택된 월의 출석 기록 (중복 제거 적용)
+  const monthlyAttendances = useMemo(() => {
+    const filtered = attendances.filter(a => {
+      const date = new Date(a.date);
+      return date.getMonth() === selectedMonth && date.getFullYear() === selectedYear;
+    });
+    // 중복 제거: 같은 날에 여러 번 출석 체크해도 마지막 것만 카운트
+    return deduplicateAttendances(filtered);
+  }, [attendances, selectedMonth, selectedYear]);
 
   // 출석 통계
   const stats = {

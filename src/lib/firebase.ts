@@ -179,6 +179,7 @@ export interface BatchRestoreResult {
   createdStudents: number;
   createdParents: number;
   createdAuthUsers: number;
+  linkedParentStudent?: number;
   errors: Array<{
     index: number;
     type: string;
@@ -187,17 +188,21 @@ export interface BatchRestoreResult {
   }>;
 }
 
+// 부모-자녀 매핑 타입 (부모 전화번호 -> 자녀 이름 배열)
+export type ParentChildMap = Record<string, string[]>;
+
 // 학생+부모 일괄 복원 (서버에서 처리)
 export const batchRestoreStudents = async (
   students: RestoreStudentData[],
-  parents: RestoreParentData[] = []
+  parents: RestoreParentData[] = [],
+  parentChildMap: ParentChildMap = {}
 ): Promise<BatchRestoreResult> => {
   try {
     const batchRestoreFn = httpsCallable<
-      { students: RestoreStudentData[]; parents: RestoreParentData[] },
+      { students: RestoreStudentData[]; parents: RestoreParentData[]; parentChildMap: ParentChildMap },
       BatchRestoreResult
     >(functions, 'batchRestoreStudents');
-    const result = await batchRestoreFn({ students, parents });
+    const result = await batchRestoreFn({ students, parents, parentChildMap });
     return result.data;
   } catch (error: unknown) {
     console.error('Error calling batchRestoreStudents:', error);
@@ -208,7 +213,41 @@ export const batchRestoreStudents = async (
       createdStudents: 0,
       createdParents: 0,
       createdAuthUsers: 0,
+      linkedParentStudent: 0,
       errors: [{ index: -1, type: 'general', name: '', error: (error as Error).message }]
+    };
+  }
+};
+
+// 모든 학부모 계정 삭제 (임시 유틸리티)
+export const deleteAllGuardians = async (): Promise<{
+  success: boolean;
+  deletedAuthUsers: number;
+  deletedParentDocs: number;
+  deletedAuthMappings: number;
+  errors: Array<{ error: string }>;
+}> => {
+  try {
+    const deleteGuardiansFn = httpsCallable<
+      Record<string, never>,
+      {
+        success: boolean;
+        deletedAuthUsers: number;
+        deletedParentDocs: number;
+        deletedAuthMappings: number;
+        errors: Array<{ error: string }>;
+      }
+    >(functions, 'deleteAllGuardians');
+    const result = await deleteGuardiansFn({});
+    return result.data;
+  } catch (error: unknown) {
+    console.error('Error calling deleteAllGuardians:', error);
+    return {
+      success: false,
+      deletedAuthUsers: 0,
+      deletedParentDocs: 0,
+      deletedAuthMappings: 0,
+      errors: [{ error: (error as Error).message }]
     };
   }
 };

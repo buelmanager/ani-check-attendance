@@ -7,8 +7,9 @@ import { attendanceService } from '../../services/attendanceService';
 import { consultationService } from '../../services/consultationService';
 import { homeworkService } from '../../services/homeworkService';
 import { scoreService } from '../../services/scoreService';
-import { statisticsService } from '../../services/statisticsService';
-import type { Student, StudentStatus, Attendance } from '../../types';
+import { statisticsService, deduplicateAttendances } from '../../services/statisticsService';
+import { parentService } from '../../services/parentService';
+import type { Student, StudentStatus, Attendance, Parent } from '../../types';
 import type { Consultation, ConsultationType, ConsultationCategory } from '../../types/consultation';
 import { CONSULTATION_TYPE_LABELS, CONSULTATION_CATEGORIES } from '../../types/consultation';
 import type { Homework } from '../../types/homework';
@@ -74,6 +75,7 @@ export default function StudentDetail() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [learningSubTab, setLearningSubTab] = useState<'homework' | 'score' | 'progress'>('homework');
   const [allAttendances, setAllAttendances] = useState<Attendance[]>([]);
+  const [parents, setParents] = useState<Parent[]>([]);
 
   // 학생 데이터 로드
   useEffect(() => {
@@ -134,6 +136,28 @@ export default function StudentDetail() {
     return () => unsubscribe();
   }, [id]);
 
+  // 부모 데이터 로드
+  useEffect(() => {
+    if (!student?.parentIds || student.parentIds.length === 0) {
+      setParents([]);
+      return;
+    }
+
+    const loadParents = async () => {
+      try {
+        const parentData = await Promise.all(
+          student.parentIds.map(parentId => parentService.getById(parentId))
+        );
+        setParents(parentData.filter((p): p is Parent => p !== null));
+      } catch (error) {
+        console.error('Error loading parents:', error);
+        setParents([]);
+      }
+    };
+
+    loadParents();
+  }, [student?.parentIds]);
+
   const getStudentClasses = () => {
     return classes.filter(c => c.studentIds.includes(student?.id || ''));
   };
@@ -164,10 +188,15 @@ export default function StudentDetail() {
     }
   };
 
+  // 중복 제거된 출석 데이터
+  const deduplicatedAttendances = useMemo(() => {
+    return deduplicateAttendances(attendances);
+  }, [attendances]);
+
   const calculateAttendanceRate = () => {
-    if (attendances.length === 0) return 0;
-    const present = attendances.filter(a => a.status === 'present').length;
-    return Math.round((present / attendances.length) * 100);
+    if (deduplicatedAttendances.length === 0) return 0;
+    const present = deduplicatedAttendances.filter(a => a.status === 'present').length;
+    return Math.round((present / deduplicatedAttendances.length) * 100);
   };
 
   // 상담 모달 열기
@@ -425,18 +454,73 @@ export default function StudentDetail() {
                   <p className="font-medium text-gray-900">{student.phone || '-'}</p>
                 </div>
                 <div className="p-4 bg-gray-50 rounded-xl">
-                  <span className="text-sm text-gray-500">보호자 연락처</span>
-                  <p className="font-medium text-gray-900">{student.parentPhone || '-'}</p>
-                </div>
-                <div className="p-4 bg-gray-50 rounded-xl">
                   <span className="text-sm text-gray-500">긴급연락처</span>
                   <p className="font-medium text-gray-900">{student.emergencyContact || '-'}</p>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-xl">
+                <div className="p-4 bg-gray-50 rounded-xl md:col-span-2">
                   <span className="text-sm text-gray-500">주소</span>
                   <p className="font-medium text-gray-900">{student.address || '-'}</p>
                 </div>
               </div>
+            </div>
+
+            {/* 보호자 정보 */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">보호자 정보</h3>
+              {parents.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {parents.map((parent) => (
+                    <div key={parent.id} className="p-4 bg-purple-50 rounded-xl border border-purple-100">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                          <span className="text-purple-700 font-bold">{parent.name.charAt(0)}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{parent.name}</p>
+                          <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                            {parent.relationType === 'father' ? '아버지' :
+                             parent.relationType === 'mother' ? '어머니' : '보호자'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          <span className="text-gray-700">{parent.phone || '-'}</span>
+                          {parent.phone && (
+                            <a
+                              href={`tel:${parent.phone}`}
+                              className="text-purple-600 hover:text-purple-800"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 3l-8 8m0 0V3m0 8h8" />
+                              </svg>
+                            </a>
+                          )}
+                        </div>
+                        {parent.userId && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-green-600 text-xs">앱 계정 연결됨</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 bg-gray-50 rounded-xl text-center">
+                  <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  <p className="text-gray-500 mb-1">연결된 보호자가 없습니다</p>
+                  <p className="text-sm text-gray-400">엑셀에서 학부모 데이터를 가져오면 자동으로 연결됩니다</p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1093,14 +1177,20 @@ function StudentStatisticsTab({
 }) {
   const [periodDays, setPeriodDays] = useState(30);
 
-  // 기간 필터링된 출석 데이터
+  // 전체 기간 중복 제거된 출석 데이터
+  const deduplicatedAttendances = useMemo(() => {
+    return deduplicateAttendances(attendances);
+  }, [attendances]);
+
+  // 기간 필터링된 출석 데이터 (중복 제거 적용)
   const filteredAttendances = useMemo(() => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - periodDays);
-    return attendances.filter(a => new Date(a.date) >= cutoff);
-  }, [attendances, periodDays]);
+    const filtered = deduplicatedAttendances.filter(a => new Date(a.date) >= cutoff);
+    return filtered;
+  }, [deduplicatedAttendances, periodDays]);
 
-  // 기본 통계
+  // 기본 통계 (이미 중복 제거된 데이터 사용)
   const stats = useMemo(() => {
     const total = filteredAttendances.length;
     const present = filteredAttendances.filter(a => a.status === 'present').length;
@@ -1354,29 +1444,29 @@ function StudentStatisticsTab({
         </div>
       )}
 
-      {/* 전체 기간 요약 */}
+      {/* 전체 기간 요약 (중복 제거 적용) */}
       <div className="bg-gray-50 rounded-xl p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">전체 기간 요약</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div className="bg-white p-4 rounded-xl">
-            <p className="text-2xl font-bold text-primary">{attendances.length}</p>
+            <p className="text-2xl font-bold text-primary">{deduplicatedAttendances.length}</p>
             <p className="text-sm text-gray-500">총 출석 기록</p>
           </div>
           <div className="bg-white p-4 rounded-xl">
             <p className="text-2xl font-bold text-green-500">
-              {attendances.filter(a => a.status === 'present').length}
+              {deduplicatedAttendances.filter(a => a.status === 'present').length}
             </p>
             <p className="text-sm text-gray-500">총 출석</p>
           </div>
           <div className="bg-white p-4 rounded-xl">
             <p className="text-2xl font-bold text-yellow-500">
-              {attendances.filter(a => a.status === 'late').length}
+              {deduplicatedAttendances.filter(a => a.status === 'late').length}
             </p>
             <p className="text-sm text-gray-500">총 지각</p>
           </div>
           <div className="bg-white p-4 rounded-xl">
             <p className="text-2xl font-bold text-red-500">
-              {attendances.filter(a => a.status === 'absent').length}
+              {deduplicatedAttendances.filter(a => a.status === 'absent').length}
             </p>
             <p className="text-sm text-gray-500">총 결석</p>
           </div>

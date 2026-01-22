@@ -31,6 +31,13 @@ export default function AdminAttendance() {
   const [absentReason, setAbsentReason] = useState('');
   const [absentTargetStudentId, setAbsentTargetStudentId] = useState<string | null>(null);
 
+  // 더미 데이터 생성 관련 상태
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoProgress, setDemoProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+
   const selectedClassData = classes.find((c) => c.id === selectedClass);
   const classStudents = selectedClassData
     ? students.filter((s) => selectedClassData.studentIds.includes(s.id))
@@ -210,6 +217,100 @@ export default function AdminAttendance() {
   const lateCount = dateAttendances.filter((a) => a.status === 'late').length;
   const absentCount = dateAttendances.filter((a) => a.status === 'absent').length;
 
+  // 더미 출석 데이터 생성 함수 (최근 30일)
+  const generateDemoAttendance = async () => {
+    if (students.length === 0 || classes.length === 0) {
+      alert('학생 또는 클래스가 없습니다. 먼저 데이터를 등록해주세요.');
+      return;
+    }
+
+    if (!confirm(`최근 30일간 모든 학생(${students.length}명)의 더미 출석 데이터를 생성하시겠습니까?\n\n기존 출석 데이터가 있으면 덮어씁니다.`)) {
+      return;
+    }
+
+    setIsDemoLoading(true);
+
+    try {
+      const dates: string[] = [];
+      const now = new Date();
+
+      // 최근 30일 날짜 생성
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        dates.push(date.toISOString().split('T')[0]);
+      }
+
+      // 각 학생이 속한 클래스 찾기
+      const studentClassMap = new Map<string, string[]>();
+      classes.forEach(cls => {
+        cls.studentIds.forEach(studentId => {
+          const existing = studentClassMap.get(studentId) || [];
+          existing.push(cls.id);
+          studentClassMap.set(studentId, existing);
+        });
+      });
+
+      // 출석 생성 (학생 x 날짜 x 클래스)
+      const totalRecords = students.reduce((sum, student) => {
+        const classIds = studentClassMap.get(student.id) || [];
+        return sum + (dates.length * classIds.length);
+      }, 0);
+
+      setDemoProgress({ current: 0, total: totalRecords });
+
+      let processed = 0;
+
+      for (const student of students) {
+        const classIds = studentClassMap.get(student.id) || [];
+        if (classIds.length === 0) continue;
+
+        for (const classId of classIds) {
+          for (const date of dates) {
+            // 랜덤 출석 상태 (출석 75%, 지각 15%, 결석 10%)
+            const rand = Math.random();
+            let status: 'present' | 'late' | 'absent';
+            if (rand < 0.75) {
+              status = 'present';
+            } else if (rand < 0.90) {
+              status = 'late';
+            } else {
+              status = 'absent';
+            }
+
+            // 랜덤 체크인 시간 생성 (8:00 ~ 10:00 사이)
+            const hour = status === 'late' ? 9 + Math.floor(Math.random() * 2) : 8 + Math.floor(Math.random() * 2);
+            const minute = Math.floor(Math.random() * 60);
+            const checkInTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+
+            await addAttendance({
+              classId,
+              studentId: student.id,
+              date,
+              status,
+              checkInTime: status !== 'absent' ? checkInTime : undefined,
+              checkInMethod: 'manual'
+            });
+
+            processed++;
+            if (processed % 50 === 0) {
+              setDemoProgress({ current: processed, total: totalRecords });
+            }
+          }
+        }
+      }
+
+      setDemoProgress({ current: totalRecords, total: totalRecords });
+      alert(`더미 출석 데이터 생성 완료!\n\n총 ${totalRecords}개 레코드 생성됨`);
+    } catch (error) {
+      console.error('Error generating demo attendance:', error);
+      alert('더미 데이터 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsDemoLoading(false);
+      setDemoProgress(null);
+    }
+  };
+
   return (
     <AdminLayout>
       {/* Header */}
@@ -219,6 +320,16 @@ export default function AdminAttendance() {
           <p className="text-gray-500">QR 코드 생성 및 수동 출석 체크</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={generateDemoAttendance}
+            disabled={isDemoLoading}
+            className="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            </svg>
+            {isDemoLoading ? '생성 중...' : '더미 30일'}
+          </button>
           <button
             onClick={generateGlobalQR}
             disabled={isGeneratingGlobal}
@@ -475,6 +586,37 @@ export default function AdminAttendance() {
             >
               닫기
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 더미 데이터 생성 진행률 모달 */}
+      {isDemoLoading && demoProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">더미 출석 데이터 생성 중...</h2>
+            <p className="text-gray-500 mb-4">최근 30일간 출석 데이터를 생성하고 있습니다</p>
+
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <span>진행률</span>
+                <span>{demoProgress.current} / {demoProgress.total}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className="bg-pink-500 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${(demoProgress.current / demoProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-center text-sm text-gray-500 mt-2">
+                {Math.round((demoProgress.current / demoProgress.total) * 100)}%
+              </p>
+            </div>
+
+            <p className="text-xs text-gray-400 text-center">
+              창을 닫지 마세요. 완료되면 자동으로 닫힙니다.
+            </p>
           </div>
         </div>
       )}

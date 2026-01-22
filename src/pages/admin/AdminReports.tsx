@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
-import { statisticsService } from '../../services/statisticsService';
+import { statisticsService, deduplicateAttendances } from '../../services/statisticsService';
 import {
   StatCard,
   BarChart,
@@ -111,13 +111,15 @@ export default function AdminReports() {
     [attendances, filter]
   );
 
-  // 기본 통계
+  // 기본 통계 (중복 제거 적용)
   const basicStats = useMemo(() => {
-    const total = filteredAttendances.length;
-    const present = filteredAttendances.filter(a => a.status === 'present').length;
-    const late = filteredAttendances.filter(a => a.status === 'late').length;
-    const absent = filteredAttendances.filter(a => a.status === 'absent').length;
-    const excused = filteredAttendances.filter(a => a.status === 'excused').length;
+    // 중복 제거: 같은 학생이 같은 날 여러번 출석 체크해도 마지막 것만 카운트
+    const deduplicated = deduplicateAttendances(filteredAttendances);
+    const total = deduplicated.length;
+    const present = deduplicated.filter(a => a.status === 'present').length;
+    const late = deduplicated.filter(a => a.status === 'late').length;
+    const absent = deduplicated.filter(a => a.status === 'absent').length;
+    const excused = deduplicated.filter(a => a.status === 'excused').length;
 
     return {
       total,
@@ -255,8 +257,10 @@ export default function AdminReports() {
   }, [attendances, students, classes]);
 
   // 위험도 높은 학생 (상위 5명)
+  // 출석 기록이 최소 5개 이상인 학생만 대상으로 함 (데이터 부족시 위험도 계산 제외)
   const riskStudents = useMemo(() => {
     return studentStats
+      .filter(s => s.total >= 5) // 출석 기록이 5개 미만이면 위험도 계산에서 제외
       .map(s => {
         let riskScore = 0;
         if (s.attendanceRate < 70) riskScore += 40;
@@ -551,7 +555,7 @@ export default function AdminReports() {
             />
             <StatCard
               title="관리 필요"
-              value={studentStats.filter(s => s.attendanceRate < 70).length}
+              value={studentStats.filter(s => s.total >= 5 && s.attendanceRate < 70).length}
               subtitle="70% 미만"
               color="red"
             />
@@ -582,7 +586,8 @@ export default function AdminReports() {
                   {studentStats.map((student, index) => (
                     <tr
                       key={student.studentId}
-                      className="hover:bg-gray-50"
+                      className="hover:bg-accent/5 cursor-pointer transition-colors"
+                      onClick={() => setSelectedStudent(student)}
                     >
                       <td className="py-3 pl-2">
                         <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${
@@ -619,12 +624,9 @@ export default function AdminReports() {
                         </span>
                       </td>
                       <td className="py-3 text-center">
-                        <button
-                          onClick={() => setSelectedStudent(student)}
-                          className="text-xs text-accent hover:text-primary font-medium px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors"
-                        >
-                          상세보기
-                        </button>
+                        <span className="text-xs text-accent font-medium">
+                          상세보기 →
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -661,7 +663,7 @@ export default function AdminReports() {
             />
             <StatCard
               title="관리 필요"
-              value={classStats.filter(c => c.attendanceRate < 80).length}
+              value={classStats.filter(c => c.total >= 5 && c.attendanceRate < 80).length}
               subtitle="80% 미만"
               color="red"
             />

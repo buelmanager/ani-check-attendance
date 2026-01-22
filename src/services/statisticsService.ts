@@ -23,6 +23,32 @@ import { DAY_LABELS } from '../types/statistics';
 // 유틸리티 함수들
 const getDateString = (date: Date): string => date.toISOString().split('T')[0];
 
+// 중복 출석 기록 제거 (같은 학생, 같은 날짜에 여러 기록이 있으면 가장 최신 것만 유지)
+// 덮어쓰기 개념: 같은 날에 여러번 출석 체크해도 마지막 상태만 유효
+// 다른 컴포넌트에서도 사용할 수 있도록 export
+export const deduplicateAttendances = (attendances: Attendance[]): Attendance[] => {
+  const attendanceMap = new Map<string, Attendance>();
+
+  // 날짜순으로 정렬하여 최신 기록이 덮어쓰도록 함
+  const sorted = [...attendances].sort((a, b) => {
+    // 먼저 날짜로 정렬
+    const dateCompare = a.date.localeCompare(b.date);
+    if (dateCompare !== 0) return dateCompare;
+    // 같은 날짜면 체크인 시간으로 정렬 (최신이 마지막)
+    const timeA = a.checkInTime || '00:00';
+    const timeB = b.checkInTime || '00:00';
+    return timeA.localeCompare(timeB);
+  });
+
+  sorted.forEach(a => {
+    // 학생ID + 날짜를 고유 키로 사용 (반 상관없이 한 학생은 하루에 1개의 출석만)
+    const key = `${a.studentId}_${a.date}`;
+    attendanceMap.set(key, a); // 같은 키가 있으면 덮어씀 (최신 기록으로)
+  });
+
+  return Array.from(attendanceMap.values());
+};
+
 const getWeekNumber = (date: Date): number => {
   const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
   const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
@@ -38,13 +64,16 @@ const getWeekRange = (date: Date): { start: Date; end: Date } => {
   return { start, end };
 };
 
-// 기본 출석 통계 계산
+// 기본 출석 통계 계산 (중복 제거 적용)
 const calculateBasicStats = (attendances: Attendance[]): AttendanceStats => {
-  const total = attendances.length;
-  const present = attendances.filter(a => a.status === 'present').length;
-  const late = attendances.filter(a => a.status === 'late').length;
-  const absent = attendances.filter(a => a.status === 'absent').length;
-  const excused = attendances.filter(a => a.status === 'excused').length;
+  // 중복 제거: 같은 학생이 같은 날에 여러 번 출석 체크해도 마지막 것만 카운트
+  const deduplicated = deduplicateAttendances(attendances);
+
+  const total = deduplicated.length;
+  const present = deduplicated.filter(a => a.status === 'present').length;
+  const late = deduplicated.filter(a => a.status === 'late').length;
+  const absent = deduplicated.filter(a => a.status === 'absent').length;
+  const excused = deduplicated.filter(a => a.status === 'excused').length;
 
   return {
     total,
@@ -57,14 +86,17 @@ const calculateBasicStats = (attendances: Attendance[]): AttendanceStats => {
   };
 };
 
-// 연속 출석/결석 계산
+// 연속 출석/결석 계산 (중복 제거 적용)
 const calculateConsecutive = (
   attendances: Attendance[],
   status: 'present' | 'absent'
 ): number => {
   if (attendances.length === 0) return 0;
 
-  const sorted = [...attendances].sort(
+  // 중복 제거 적용
+  const deduplicated = deduplicateAttendances(attendances);
+
+  const sorted = [...deduplicated].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 
@@ -483,15 +515,18 @@ export const statisticsService = {
 
   // ==================== 특수 통계 ====================
 
-  // 시간대별 출석 통계
+  // 시간대별 출석 통계 (중복 제거 적용)
   getHourlyStats(attendances: Attendance[]): HourlyStats[] {
+    // 중복 제거 적용
+    const deduplicated = deduplicateAttendances(attendances);
+
     const hourly = new Map<number, { total: number; present: number; late: number }>();
 
     for (let i = 0; i < 24; i++) {
       hourly.set(i, { total: 0, present: 0, late: 0 });
     }
 
-    attendances.forEach(a => {
+    deduplicated.forEach(a => {
       if (a.checkInTime) {
         const hour = parseInt(a.checkInTime.split(':')[0], 10);
         // 유효한 시간 범위인지 확인 (0-23)
@@ -514,15 +549,18 @@ export const statisticsService = {
     }));
   },
 
-  // 요일별 출석 통계
+  // 요일별 출석 통계 (중복 제거는 calculateBasicStats에서 처리)
   getDayOfWeekStats(attendances: Attendance[]): DayOfWeekStats[] {
+    // 중복 제거 적용
+    const deduplicated = deduplicateAttendances(attendances);
+
     const dayStats = new Map<number, Attendance[]>();
 
     for (let i = 0; i < 7; i++) {
       dayStats.set(i, []);
     }
 
-    attendances.forEach(a => {
+    deduplicated.forEach(a => {
       const dayOfWeek = new Date(a.date).getDay();
       dayStats.get(dayOfWeek)!.push(a);
     });
@@ -530,16 +568,32 @@ export const statisticsService = {
     return Array.from(dayStats.entries()).map(([dayOfWeek, dayAttendances]) => ({
       dayOfWeek,
       dayName: DAY_LABELS[dayOfWeek],
-      stats: calculateBasicStats(dayAttendances)
+      // 이미 중복 제거된 데이터이므로 직접 통계 계산
+      stats: {
+        total: dayAttendances.length,
+        present: dayAttendances.filter(a => a.status === 'present').length,
+        late: dayAttendances.filter(a => a.status === 'late').length,
+        absent: dayAttendances.filter(a => a.status === 'absent').length,
+        excused: dayAttendances.filter(a => a.status === 'excused').length,
+        attendanceRate: dayAttendances.length > 0
+          ? Math.round(((dayAttendances.filter(a => a.status === 'present').length + dayAttendances.filter(a => a.status === 'late').length) / dayAttendances.length) * 100 * 10) / 10
+          : 0,
+        punctualityRate: dayAttendances.length > 0
+          ? Math.round((dayAttendances.filter(a => a.status === 'present').length / dayAttendances.length) * 100 * 10) / 10
+          : 0
+      }
     }));
   },
 
-  // 체크인 방법별 통계
+  // 체크인 방법별 통계 (중복 제거 적용)
   getCheckInMethodStats(attendances: Attendance[]): CheckInMethodStats {
+    // 중복 제거 적용
+    const deduplicated = deduplicateAttendances(attendances);
+
     return {
-      qr: attendances.filter(a => a.checkInMethod === 'qr').length,
-      manual: attendances.filter(a => a.checkInMethod === 'manual').length,
-      gps: attendances.filter(a => a.checkInMethod === 'gps').length
+      qr: deduplicated.filter(a => a.checkInMethod === 'qr').length,
+      manual: deduplicated.filter(a => a.checkInMethod === 'manual').length,
+      gps: deduplicated.filter(a => a.checkInMethod === 'gps').length
     };
   },
 
@@ -612,15 +666,18 @@ export const statisticsService = {
     };
   },
 
-  // 출석 패턴 분석
+  // 출석 패턴 분석 (중복 제거 적용)
   getAttendancePattern(attendances: Attendance[]): AttendancePattern | null {
     // 출석 데이터가 없으면 null 반환
     if (!attendances || attendances.length === 0) {
       return null;
     }
 
-    const dayStats = this.getDayOfWeekStats(attendances);
-    const hourStats = this.getHourlyStats(attendances);
+    // 중복 제거 적용
+    const deduplicated = deduplicateAttendances(attendances);
+
+    const dayStats = this.getDayOfWeekStats(deduplicated);
+    const hourStats = this.getHourlyStats(deduplicated);
 
     // 데이터가 없는 경우 대비
     if (!dayStats || dayStats.length === 0 || !hourStats || hourStats.length === 0) {
@@ -645,8 +702,8 @@ export const statisticsService = {
       hourStats[0]
     );
 
-    // 평균 체크인 시간 계산
-    const checkInTimes = attendances
+    // 평균 체크인 시간 계산 (중복 제거된 데이터 사용)
+    const checkInTimes = deduplicated
       .filter(a => a.checkInTime)
       .map(a => {
         const [h, m] = a.checkInTime!.split(':').map(Number);
@@ -659,8 +716,8 @@ export const statisticsService = {
     const avgHour = Math.floor(avgMinutes / 60);
     const avgMin = avgMinutes % 60;
 
-    // 지각 시 평균 시간
-    const lateTimes = attendances
+    // 지각 시 평균 시간 (중복 제거된 데이터 사용)
+    const lateTimes = deduplicated
       .filter(a => a.status === 'late' && a.checkInTime)
       .map(a => a.checkInTime!);
 
@@ -765,14 +822,15 @@ export const statisticsService = {
     });
   },
 
-  // 대시보드 요약
+  // 대시보드 요약 (중복 제거 적용)
   getDashboardSummary(
     students: Student[],
     classes: Class[],
     attendances: Attendance[]
   ): DashboardSummary {
     const today = getDateString(new Date());
-    const todayAttendances = attendances.filter(a => a.date === today);
+    // 중복 제거 적용
+    const todayAttendances = deduplicateAttendances(attendances.filter(a => a.date === today));
     const activeStudents = students.filter(s => s.status === 'active');
 
     // 오늘 예상 출석 수 (활성 학생 수)

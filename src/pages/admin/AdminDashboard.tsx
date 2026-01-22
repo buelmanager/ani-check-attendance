@@ -1,14 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
+import { deduplicateAttendances } from '../../services/statisticsService';
 
 export default function AdminDashboard() {
   const { classes, students, attendances } = useStore();
   const [isLoading, setIsLoading] = useState(true);
 
   const today = new Date().toISOString().split('T')[0];
-  const todayAttendances = attendances.filter((a) => a.date === today);
+  // 중복 제거 적용: 같은 학생이 같은 날 여러번 출석 체크해도 마지막 것만 카운트
+  const todayAttendances = useMemo(() => {
+    const filtered = attendances.filter((a) => a.date === today);
+    return deduplicateAttendances(filtered);
+  }, [attendances, today]);
 
   const presentCount = todayAttendances.filter((a) => a.status === 'present').length;
   const lateCount = todayAttendances.filter((a) => a.status === 'late').length;
@@ -170,6 +175,7 @@ export default function AdminDashboard() {
           {classes.length > 0 ? (
             <div className="space-y-3">
               {classes.slice(0, 5).map((cls) => {
+                // 이미 중복 제거된 todayAttendances에서 해당 클래스 출석만 필터링
                 const classAttendances = todayAttendances.filter((a) => a.classId === cls.id);
                 const classPresent = classAttendances.filter((a) => a.status === 'present' || a.status === 'late').length;
                 const classRate = cls.studentIds.length > 0

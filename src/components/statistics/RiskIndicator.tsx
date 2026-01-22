@@ -1,5 +1,5 @@
 interface RiskIndicatorProps {
-  score: number; // 0-100 (0: 안전, 100: 위험)
+  score: number; // 0-100 (0: 매우 좋음, 100: 관리 필요)
   label?: string;
   size?: 'sm' | 'md' | 'lg';
   showDetails?: boolean;
@@ -15,16 +15,16 @@ const getRiskLevel = (score: number): {
   bgColor: string;
   iconColor: string;
 } => {
-  if (score < 20) return { level: '안전', color: 'text-green-600', bgColor: 'bg-green-100', iconColor: 'text-green-500' };
-  if (score < 40) return { level: '양호', color: 'text-blue-600', bgColor: 'bg-blue-100', iconColor: 'text-blue-500' };
-  if (score < 60) return { level: '주의', color: 'text-yellow-600', bgColor: 'bg-yellow-100', iconColor: 'text-yellow-500' };
-  if (score < 80) return { level: '경고', color: 'text-orange-600', bgColor: 'bg-orange-100', iconColor: 'text-orange-500' };
-  return { level: '위험', color: 'text-red-600', bgColor: 'bg-red-100', iconColor: 'text-red-500' };
+  if (score < 20) return { level: '매우 좋음', color: 'text-green-600', bgColor: 'bg-green-100', iconColor: 'text-green-500' };
+  if (score < 40) return { level: '좋음', color: 'text-blue-600', bgColor: 'bg-blue-100', iconColor: 'text-blue-500' };
+  if (score < 60) return { level: '보통', color: 'text-yellow-600', bgColor: 'bg-yellow-100', iconColor: 'text-yellow-500' };
+  if (score < 80) return { level: '관심 필요', color: 'text-orange-600', bgColor: 'bg-orange-100', iconColor: 'text-orange-500' };
+  return { level: '집중 관리', color: 'text-red-600', bgColor: 'bg-red-100', iconColor: 'text-red-500' };
 };
 
 export default function RiskIndicator({
   score,
-  label = '이탈 위험도',
+  label = '출석 관리 필요도',
   size = 'md',
   showDetails = false,
   factors = []
@@ -71,7 +71,7 @@ export default function RiskIndicator({
       {/* 상세 요인 (옵션) */}
       {showDetails && factors.length > 0 && (
         <div className="mt-3 pt-3 border-t border-white/50">
-          <div className="text-xs font-medium text-gray-600 mb-2">위험 요인 분석</div>
+          <div className="text-xs font-medium text-gray-600 mb-2">관리 포인트</div>
           <div className="space-y-1.5">
             {factors.map((factor, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export default function RiskIndicator({
                     }}
                   />
                 </div>
-                <span className="text-xs text-gray-500 w-8 text-right">{factor.impact}%</span>
+                <span className="text-xs text-gray-500 w-8 text-right">{Math.round(factor.impact)}%</span>
               </div>
             ))}
           </div>
