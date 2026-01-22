@@ -6,6 +6,8 @@ interface CalendarHeatmapProps {
   endDate?: Date;
   colorScale?: string[];
   onDateClick?: (date: string, value: number) => void;
+  // 개인 출석 캘린더 모드: 출석 상태에 따라 색상 표시
+  showStatusColors?: boolean;
 }
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -23,11 +25,23 @@ const getColorByRate = (rate: number): string => {
   return '#f3f4f6'; // 0% 또는 데이터 없음
 };
 
+// 출석 상태에 따른 색상
+const getColorByStatus = (status?: string): string => {
+  switch (status) {
+    case 'present': return '#22c55e';  // 출석: 초록
+    case 'late': return '#fde047';     // 지각: 노랑
+    case 'absent': return '#f87171';   // 결석: 빨강
+    case 'excused': return '#60a5fa';  // 사유결석: 파랑
+    default: return '#f3f4f6';         // 데이터 없음: 회색
+  }
+};
+
 export default function CalendarHeatmap({
   data,
   startDate,
   endDate,
-  onDateClick
+  onDateClick,
+  showStatusColors = false
 }: CalendarHeatmapProps) {
   // 기본값: 최근 3개월
   const { start, end } = useMemo(() => {
@@ -50,7 +64,7 @@ export default function CalendarHeatmap({
     const result: {
       month: number;
       year: number;
-      weeks: { date: Date; dateStr: string; value: number; isCurrentMonth: boolean }[][];
+      weeks: { date: Date; dateStr: string; value: number; status?: string; isCurrentMonth: boolean }[][];
     }[] = [];
 
     let currentDate = new Date(start.getFullYear(), start.getMonth(), 1);
@@ -68,7 +82,7 @@ export default function CalendarHeatmap({
       const weekStart = new Date(firstDay);
       weekStart.setDate(firstDay.getDate() - firstDay.getDay());
 
-      let week: { date: Date; dateStr: string; value: number; isCurrentMonth: boolean }[] = [];
+      let week: { date: Date; dateStr: string; value: number; status?: string; isCurrentMonth: boolean }[] = [];
       const tempDate = new Date(weekStart);
 
       while (tempDate <= lastDay || week.length > 0) {
@@ -80,6 +94,7 @@ export default function CalendarHeatmap({
           date: new Date(tempDate),
           dateStr,
           value: dayData?.value ?? -1,
+          status: dayData?.status,
           isCurrentMonth
         });
 
@@ -103,19 +118,36 @@ export default function CalendarHeatmap({
     <div className="w-full">
       {/* 범례 */}
       <div className="flex items-center justify-end gap-2 mb-4 text-xs text-gray-500">
-        <span>낮음</span>
-        <div className="flex gap-0.5">
-          {['#f87171', '#fb923c', '#fde047', '#86efac', '#4ade80', '#22c55e'].map((color, i) => (
-            <div
-              key={i}
-              className="w-3 h-3 rounded-sm"
-              style={{ backgroundColor: color }}
-            />
-          ))}
-        </div>
-        <span>높음</span>
-        <div className="w-3 h-3 rounded-sm bg-gray-100 ml-2" />
-        <span>데이터 없음</span>
+        {showStatusColors ? (
+          <>
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#22c55e' }} />
+            <span>출석</span>
+            <div className="w-3 h-3 rounded-sm ml-2" style={{ backgroundColor: '#fde047' }} />
+            <span>지각</span>
+            <div className="w-3 h-3 rounded-sm ml-2" style={{ backgroundColor: '#f87171' }} />
+            <span>결석</span>
+            <div className="w-3 h-3 rounded-sm ml-2" style={{ backgroundColor: '#60a5fa' }} />
+            <span>사유결석</span>
+            <div className="w-3 h-3 rounded-sm bg-gray-100 ml-2" />
+            <span>기록 없음</span>
+          </>
+        ) : (
+          <>
+            <span>낮음</span>
+            <div className="flex gap-0.5">
+              {['#f87171', '#fb923c', '#fde047', '#86efac', '#4ade80', '#22c55e'].map((color, i) => (
+                <div
+                  key={i}
+                  className="w-3 h-3 rounded-sm"
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+            <span>높음</span>
+            <div className="w-3 h-3 rounded-sm bg-gray-100 ml-2" />
+            <span>데이터 없음</span>
+          </>
+        )}
       </div>
 
       {/* 캘린더 히트맵 */}
@@ -144,17 +176,30 @@ export default function CalendarHeatmap({
               {/* 주별 셀 */}
               {weeks.map((week, weekIdx) => (
                 <div key={weekIdx} className="flex flex-col gap-1">
-                  {week.map((day) => (
-                    <div
-                      key={day.dateStr}
-                      className={`w-5 h-5 rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-indigo-300 ${
-                        !day.isCurrentMonth ? 'opacity-30' : ''
-                      }`}
-                      style={{ backgroundColor: getColorByRate(day.value) }}
-                      title={`${day.dateStr}: ${day.value >= 0 ? `${day.value}%` : '데이터 없음'}`}
-                      onClick={() => day.isCurrentMonth && onDateClick?.(day.dateStr, day.value)}
-                    />
-                  ))}
+                  {week.map((day) => {
+                    const bgColor = showStatusColors
+                      ? getColorByStatus(day.status)
+                      : getColorByRate(day.value);
+                    const statusLabel = day.status === 'present' ? '출석' :
+                      day.status === 'late' ? '지각' :
+                      day.status === 'absent' ? '결석' :
+                      day.status === 'excused' ? '사유결석' : '기록 없음';
+                    const titleText = showStatusColors
+                      ? `${day.dateStr}: ${statusLabel}`
+                      : `${day.dateStr}: ${day.value >= 0 ? `${day.value}%` : '데이터 없음'}`;
+
+                    return (
+                      <div
+                        key={day.dateStr}
+                        className={`w-5 h-5 rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-indigo-300 ${
+                          !day.isCurrentMonth ? 'opacity-30' : ''
+                        }`}
+                        style={{ backgroundColor: bgColor }}
+                        title={titleText}
+                        onClick={() => day.isCurrentMonth && onDateClick?.(day.dateStr, day.value)}
+                      />
+                    );
+                  })}
                 </div>
               ))}
             </div>

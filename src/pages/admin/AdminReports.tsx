@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
-import { statisticsService, deduplicateAttendances } from '../../services/statisticsService';
+import { statisticsService, deduplicateAttendances, parseHourFromTimeString } from '../../services/statisticsService';
 import {
   StatCard,
   BarChart,
@@ -28,7 +28,14 @@ import {
   CalendarIcon,
   ClockIcon,
   CalendarDaysIcon,
-  BarChart2Icon
+  BarChart2Icon,
+  GaugeIcon,
+  LineChartIcon,
+  PieChartIcon,
+  ListIcon,
+  TargetIcon,
+  ZapIcon,
+  ActivityIcon
 } from '../../components/statistics';
 import type {
   PeriodType,
@@ -66,6 +73,8 @@ export default function AdminReports() {
   // 모달 상태
   const [selectedStudent, setSelectedStudent] = useState<StudentAttendanceStats | null>(null);
   const [selectedClass, setSelectedClass] = useState<ClassAttendanceStats | null>(null);
+  const [selectedHeatmapCell, setSelectedHeatmapCell] = useState<{ dayOfWeek: number; hour: number } | null>(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
 
   // 기간 선택 시 날짜 범위 자동 설정
   useEffect(() => {
@@ -212,13 +221,15 @@ export default function AdminReports() {
     filteredAttendances.forEach(a => {
       if (a.checkInTime) {
         const dayOfWeek = new Date(a.date).getDay();
-        const hour = parseInt(a.checkInTime.split(':')[0], 10);
+        const hour = parseHourFromTimeString(a.checkInTime);
 
-        const existing = data.find(d => d.dayOfWeek === dayOfWeek && d.hour === hour);
-        if (existing) {
-          existing.value++;
-        } else {
-          data.push({ dayOfWeek, hour, value: 1 });
+        if (hour !== null && !isNaN(hour)) {
+          const existing = data.find(d => d.dayOfWeek === dayOfWeek && d.hour === hour);
+          if (existing) {
+            existing.value++;
+          } else {
+            data.push({ dayOfWeek, hour, value: 1 });
+          }
         }
       }
     });
@@ -384,6 +395,16 @@ export default function AdminReports() {
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Main Stats with Gauge */}
+          <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <GaugeIcon size={18} className="text-indigo-500" />
+              핵심 출석 지표
+            </h3>
+            <p className="text-sm text-gray-600">
+              선택한 기간 동안의 전체 출석 현황을 한눈에 보여줍니다.
+              <span className="font-medium text-indigo-600"> 출석률 85% 이상</span>이 권장 목표입니다.
+            </p>
+          </div>
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="card flex flex-col items-center justify-center">
               <AttendanceGauge
@@ -392,6 +413,10 @@ export default function AdminReports() {
                 size={200}
                 label="전체 출석률"
               />
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                출석 + 지각을 합한 비율입니다<br/>
+                목표선(85%)을 넘으면 좋아요!
+              </p>
             </div>
 
             <div className="lg:col-span-2 grid grid-cols-2 gap-4">
@@ -428,21 +453,34 @@ export default function AdminReports() {
 
           {/* Calendar Heatmap */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <CalendarIcon size={18} className="text-indigo-500" />
               출석 현황 캘린더
             </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              날짜별 출석률을 색상으로 표현합니다. <span className="text-green-600 font-medium">초록색</span>일수록 출석률이 높고,
+              <span className="text-red-500 font-medium"> 빨간색</span>일수록 출석률이 낮습니다.
+              <span className="text-indigo-600"> 날짜를 클릭</span>하면 해당 날의 상세 출석 기록을 확인할 수 있어요.
+            </p>
             <CalendarHeatmap
               data={calendarData}
               startDate={new Date(dateRange.start)}
               endDate={new Date(dateRange.end)}
+              onDateClick={(date) => setSelectedCalendarDate(date)}
             />
           </div>
 
           {/* Charts Row */}
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">주간 출석률</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <BarChart2Icon size={18} className="text-indigo-500" />
+                주간 출석률
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                최근 7일간의 일별 출석률 변화를 보여줍니다.
+                막대가 높을수록 해당 날의 출석률이 높습니다.
+              </p>
               <BarChart
                 data={weeklyChartData}
                 maxValue={100}
@@ -451,7 +489,14 @@ export default function AdminReports() {
             </div>
 
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">출석 현황 분포</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <PieChartIcon size={18} className="text-indigo-500" />
+                출석 현황 분포
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                전체 출석 기록을 출석/지각/결석/사유결석으로 나눈 비율입니다.
+                <span className="text-green-600 font-medium"> 초록색(출석)</span> 비율이 클수록 좋습니다.
+              </p>
               <div className="flex items-center justify-center gap-8">
                 <DonutChart
                   data={statusDonutData}
@@ -466,9 +511,18 @@ export default function AdminReports() {
 
           {/* Trend Chart */}
           <div className="card">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <LineChartIcon size={18} className="text-indigo-500" />
+              월별 출석률 추세
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              최근 6개월간 출석률이 어떻게 변화했는지 보여줍니다.
+              <span className="text-indigo-600 font-medium"> 선이 위로 올라가면</span> 출석률이 개선되고 있는 것이고,
+              <span className="text-red-500 font-medium"> 아래로 내려가면</span> 관리가 필요합니다.
+            </p>
             <TrendChart
               data={trendComparisonData}
-              title="월별 출석률 추세"
+              title=""
               height={200}
               showComparison={true}
               valueLabel="현재"
@@ -481,13 +535,17 @@ export default function AdminReports() {
             {/* Alert Students */}
             {alertStudents.length > 0 && (
               <div className="card">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-2">
                   <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                     <AlertTriangleIcon size={18} className="text-red-500" />
                     주의 필요 학생
                   </h3>
                   <span className="text-sm text-red-500 font-medium">{alertStudents.length}명</span>
                 </div>
+                <p className="text-sm text-gray-500 mb-4">
+                  연속 결석, 출석률 저하 등의 이유로 관심이 필요한 학생들입니다.
+                  <span className="text-indigo-600"> 클릭하면</span> 해당 학생의 상세 출석 현황을 확인할 수 있어요.
+                </p>
                 <div className="space-y-3">
                   {alertStudents.slice(0, 5).map(student => (
                     <AlertStudentCard
@@ -505,9 +563,16 @@ export default function AdminReports() {
 
             {/* Top Students */}
             <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <TrophyIcon size={18} className="text-yellow-500" />
+                출석 우수 학생 TOP 5
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                출석률이 가장 높은 학생 순위입니다. 연속 출석 일수도 함께 표시됩니다.
+                <span className="text-indigo-600"> 학생을 클릭</span>하면 상세 정보를 볼 수 있어요.
+              </p>
               <RankingTable
-                title="출석 우수 학생 TOP 5"
-                icon={<TrophyIcon size={18} className="text-yellow-500" />}
+                title=""
                 items={studentStats.slice(0, 5).map((s, i) => ({
                   id: s.studentId,
                   rank: s.rank || i + 1,
@@ -533,6 +598,17 @@ export default function AdminReports() {
       {activeTab === 'students' && (
         <div className="space-y-6">
           {/* Student Summary */}
+          <div className="card bg-gradient-to-r from-green-50 to-emerald-50 mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <UserIcon size={18} className="text-green-500" />
+              원생별 출석 요약
+            </h3>
+            <p className="text-sm text-gray-600">
+              각 원생의 출석 현황을 한눈에 파악할 수 있습니다.
+              <span className="font-medium text-green-600"> 출석 우수</span>는 90% 이상,
+              <span className="font-medium text-red-500"> 관리 필요</span>는 70% 미만인 원생입니다.
+            </p>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               title="전체 원생"
@@ -563,10 +639,18 @@ export default function AdminReports() {
 
           {/* Student List */}
           <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">원생별 출석 현황</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <ListIcon size={18} className="text-indigo-500" />
+                원생별 출석 현황
+              </h3>
               <span className="text-sm text-gray-500">{studentStats.length}명</span>
             </div>
+            <p className="text-sm text-gray-500 mb-4">
+              출석률 순으로 정렬되어 있습니다. <span className="font-medium text-green-600">↑</span>는 출석률 상승,
+              <span className="font-medium text-red-500"> ↓</span>는 하락 추세입니다.
+              <span className="text-indigo-600"> 행을 클릭</span>하면 해당 원생의 상세 출석 리포트를 확인할 수 있어요.
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -641,6 +725,16 @@ export default function AdminReports() {
       {activeTab === 'classes' && (
         <div className="space-y-6">
           {/* Class Summary */}
+          <div className="card bg-gradient-to-r from-purple-50 to-pink-50 mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <UsersIcon size={18} className="text-purple-500" />
+              반별 출석 요약
+            </h3>
+            <p className="text-sm text-gray-600">
+              각 반의 출석 현황을 비교할 수 있습니다. 반별로 출석률이 다르면 수업 시간대나 난이도 등을 점검해보세요.
+              <span className="font-medium text-purple-600"> 관리 필요</span>는 출석률 80% 미만인 반입니다.
+            </p>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               title="전체 반"
@@ -670,6 +764,15 @@ export default function AdminReports() {
           </div>
 
           {/* Class Cards */}
+          <div className="card bg-white mb-2">
+            <p className="text-sm text-gray-500">
+              각 반 카드에서 <span className="text-green-600 font-medium">초록</span>=출석,
+              <span className="text-yellow-500 font-medium"> 노랑</span>=지각,
+              <span className="text-red-500 font-medium"> 빨강</span>=결석,
+              <span className="text-blue-500 font-medium"> 파랑</span>=사유결석 비율을 막대로 보여줍니다.
+              <span className="text-indigo-600"> 카드를 클릭</span>하면 해당 반의 상세 정보를 볼 수 있어요.
+            </p>
+          </div>
           <div className="grid md:grid-cols-2 gap-6">
             {classStats.map((cls, index) => (
               <div
@@ -740,47 +843,83 @@ export default function AdminReports() {
       {activeTab === 'patterns' && (
         <div className="space-y-6">
           {/* Pattern Insights */}
+          <div className="card bg-gradient-to-r from-indigo-50 to-purple-50 mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <SearchIcon size={18} className="text-indigo-500" />
+              출석 패턴 분석
+            </h3>
+            <p className="text-sm text-gray-600">
+              언제, 어떤 요일에 출석이 많은지 패턴을 분석합니다.
+              이 정보를 활용하면 <span className="font-medium text-indigo-600">수업 시간 조정</span>이나
+              <span className="font-medium text-indigo-600"> 결석 예방</span>에 도움이 됩니다.
+            </p>
+          </div>
           {patterns && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="card bg-gradient-to-br from-green-50 to-emerald-50">
-                <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                  <TrendingUpIcon size={14} className="text-green-500" />
-                  출석 최고 요일
-                </h4>
-                <p className="text-2xl font-bold text-green-600">{patterns.bestDay.dayName}요일</p>
-                <p className="text-sm text-green-700">{patterns.bestDay.rate.toFixed(1)}% 출석률</p>
+            <>
+              <p className="text-sm text-gray-500 mb-2 flex items-center gap-2">
+                <ZapIcon size={14} className="text-yellow-500" />
+                <span className="font-medium">핵심 인사이트:</span> 아래 3가지 카드는 출석 패턴의 핵심 정보를 보여줍니다.
+              </p>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="card bg-gradient-to-br from-green-50 to-emerald-50">
+                  <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                    <TrendingUpIcon size={14} className="text-green-500" />
+                    출석 최고 요일
+                  </h4>
+                  <p className="text-2xl font-bold text-green-600">{patterns.bestDay.dayName}요일</p>
+                  <p className="text-sm text-green-700">{patterns.bestDay.rate.toFixed(1)}% 출석률</p>
+                  <p className="text-xs text-gray-500 mt-1">이 요일에 출석률이 가장 좋아요!</p>
+                </div>
+                <div className="card bg-gradient-to-br from-red-50 to-rose-50">
+                  <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                    <TrendingDownIcon size={14} className="text-red-500" />
+                    출석 저조 요일
+                  </h4>
+                  <p className="text-2xl font-bold text-red-600">{patterns.worstDay.dayName}요일</p>
+                  <p className="text-sm text-red-700">{patterns.worstDay.rate.toFixed(1)}% 출석률</p>
+                  <p className="text-xs text-gray-500 mt-1">이 요일은 관리가 필요해요</p>
+                </div>
+                <div className="card bg-gradient-to-br from-indigo-50 to-purple-50">
+                  <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                    <ClockIcon size={14} className="text-indigo-500" />
+                    출석 집중 시간
+                  </h4>
+                  <p className="text-2xl font-bold text-indigo-600">{patterns.peakHour.hour}시</p>
+                  <p className="text-sm text-indigo-700">{patterns.peakHour.count}건 체크인</p>
+                  <p className="text-xs text-gray-500 mt-1">가장 많이 출석하는 시간대</p>
+                </div>
               </div>
-              <div className="card bg-gradient-to-br from-red-50 to-rose-50">
-                <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                  <TrendingDownIcon size={14} className="text-red-500" />
-                  출석 저조 요일
-                </h4>
-                <p className="text-2xl font-bold text-red-600">{patterns.worstDay.dayName}요일</p>
-                <p className="text-sm text-red-700">{patterns.worstDay.rate.toFixed(1)}% 출석률</p>
-              </div>
-              <div className="card bg-gradient-to-br from-indigo-50 to-purple-50">
-                <h4 className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                  <ClockIcon size={14} className="text-indigo-500" />
-                  출석 집중 시간
-                </h4>
-                <p className="text-2xl font-bold text-indigo-600">{patterns.peakHour.hour}시</p>
-                <p className="text-sm text-indigo-700">{patterns.peakHour.count}건 체크인</p>
-              </div>
-            </div>
+            </>
           )}
 
           {/* Weekday-Hour Heatmap */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <CalendarDaysIcon size={18} className="text-indigo-500" />
               요일-시간대별 출석 분포
             </h3>
-            <WeekdayHeatmap data={weekdayHeatmapData} />
+            <p className="text-sm text-gray-500 mb-4">
+              각 셀의 색상이 <span className="text-indigo-600 font-medium">진할수록</span> 해당 요일/시간에 출석이 많습니다.
+              어느 시간대에 학생들이 많이 오는지 파악할 수 있어요.
+              <span className="text-indigo-600"> 셀을 클릭</span>하면 상세 기록을 볼 수 있습니다.
+            </p>
+            <WeekdayHeatmap
+              data={weekdayHeatmapData}
+              onCellClick={(dayOfWeek, hour) => setSelectedHeatmapCell({ dayOfWeek, hour })}
+            />
           </div>
 
           {/* Day of Week Stats */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">요일별 출석 현황</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <BarChart2Icon size={18} className="text-indigo-500" />
+              요일별 출석 현황
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              요일별 출석률을 비교합니다. <span className="text-green-600 font-medium">초록</span>=90% 이상(우수),
+              <span className="text-indigo-600 font-medium"> 보라</span>=80~90%,
+              <span className="text-red-500 font-medium"> 빨강</span>=80% 미만(관리 필요)
+            </p>
             <BarChart
               data={dayOfWeekStats.map(d => ({
                 label: d.dayName,
@@ -795,7 +934,14 @@ export default function AdminReports() {
 
           {/* Hourly Stats */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">시간대별 출석 분포</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <ClockIcon size={18} className="text-indigo-500" />
+              시간대별 출석 분포
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              시간대별로 몇 명이 출석했는지 보여줍니다. 막대 아래에 출석/지각 건수가 표시됩니다.
+              수업 시간 조정이나 피크 시간 파악에 활용하세요.
+            </p>
             <div className="overflow-x-auto">
               <BarChart
                 data={hourlyStats
@@ -806,13 +952,23 @@ export default function AdminReports() {
                     subLabel: `출석 ${h.presentCount} / 지각 ${h.lateCount}`
                   }))}
                 height={180}
+                showPercent={false}
               />
             </div>
           </div>
 
           {/* Check-in Method Stats */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">출석 체크 방법</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <ActivityIcon size={18} className="text-indigo-500" />
+              출석 체크 방법
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              학생들이 어떤 방법으로 출석 체크를 했는지 보여줍니다.
+              <span className="text-indigo-600 font-medium"> QR 체크</span>는 QR코드 스캔,
+              <span className="text-violet-600 font-medium"> 수동 체크</span>는 관리자가 직접 체크,
+              <span className="text-purple-600 font-medium"> GPS 체크</span>는 위치 기반 자동 체크입니다.
+            </p>
             <div className="flex items-center justify-center gap-8">
               <DonutChart
                 data={[
@@ -849,7 +1005,27 @@ export default function AdminReports() {
       {/* Analysis Tab */}
       {activeTab === 'analysis' && (
         <div className="space-y-6">
+          {/* Analysis Intro */}
+          <div className="card bg-gradient-to-r from-orange-50 to-amber-50 mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <TargetIcon size={18} className="text-orange-500" />
+              심층 분석
+            </h3>
+            <p className="text-sm text-gray-600">
+              이전 기간과 비교하여 출석 현황이 어떻게 변화했는지 분석합니다.
+              <span className="font-medium text-orange-600"> 관리 필요 학생</span>과
+              <span className="font-medium text-orange-600"> 관리 필요 반</span>을 빠르게 파악하고 조치를 취하세요.
+            </p>
+          </div>
+
           {/* Comparison Cards */}
+          <div className="card bg-white mb-2">
+            <p className="text-sm text-gray-500 flex items-center gap-2">
+              <TrendingUpIcon size={14} className="text-green-500" />
+              <span className="font-medium">기간 비교 분석:</span> 현재 선택한 기간과 바로 이전 동일 기간을 비교합니다.
+              예를 들어 최근 30일을 선택하면, 그 전 30일과 비교합니다.
+            </p>
+          </div>
           <div className="grid md:grid-cols-2 gap-6">
             <ComparisonCard
               title="출석률 비교"
@@ -887,11 +1063,15 @@ export default function AdminReports() {
           {/* Risk Students */}
           {riskStudents.length > 0 && (
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <AlertCircleIcon size={18} className="text-red-500" />
-                이탈 위험 학생
+                관리 필요 학생
               </h3>
-              <p className="text-sm text-gray-500 mb-4">출석률, 연속 결석, 추세를 종합하여 위험도를 분석합니다</p>
+              <p className="text-sm text-gray-500 mb-4">
+                출석률, 연속 결석, 추세를 종합하여 <span className="font-medium text-red-600">관리 필요도(0~100)</span>를 계산합니다.
+                숫자가 높을수록 즉각적인 관심이 필요한 학생입니다.
+                <span className="text-indigo-600"> 클릭</span>하면 해당 학생의 상세 리포트를 볼 수 있어요.
+              </p>
               <div className="space-y-3">
                 {riskStudents.map(student => (
                   <div
@@ -919,7 +1099,7 @@ export default function AdminReports() {
                         student.riskScore >= 60 ? 'text-red-600' :
                         student.riskScore >= 40 ? 'text-orange-600' : 'text-yellow-600'
                       }`}>
-                        위험도 {student.riskScore}
+                        관리 필요도 {student.riskScore}
                       </div>
                       <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
@@ -939,10 +1119,16 @@ export default function AdminReports() {
 
           {/* Period Comparison Stats */}
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <BarChart2Icon size={18} className="text-indigo-500" />
               이전 기간 대비 변화
             </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              각 항목별로 이전 기간 대비 변화량을 보여줍니다.
+              <span className="text-green-600 font-medium"> 초록색(+)</span>은 개선,
+              <span className="text-red-500 font-medium"> 빨간색(-)</span>은 악화를 의미합니다.
+              (단, 지각/결석은 줄어야 좋으므로 반대입니다)
+            </p>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="text-center p-4 bg-gray-50 rounded-xl">
                 <p className="text-sm text-gray-500 mb-1">전체 기록</p>
@@ -982,11 +1168,22 @@ export default function AdminReports() {
           </div>
 
           {/* Class Ranking Comparison */}
+          <div className="card bg-white mb-2">
+            <p className="text-sm text-gray-500 flex items-center gap-2">
+              <TrophyIcon size={14} className="text-yellow-500" />
+              <span className="font-medium">반별 순위:</span> 출석률이 높은 반과 낮은 반을 한눈에 비교할 수 있습니다.
+              <span className="text-indigo-600"> 반을 클릭</span>하면 해당 반의 상세 리포트를 볼 수 있어요.
+            </p>
+          </div>
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <TrophyIcon size={18} className="text-yellow-500" />
+                반별 출석률 순위
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">출석률이 높은 상위 5개 반</p>
               <RankingTable
-                title="반별 출석률 순위"
-                icon={<TrophyIcon size={18} className="text-yellow-500" />}
+                title=""
                 items={classStats.slice(0, 5).map((cls, i) => ({
                   id: cls.classId,
                   rank: i + 1,
@@ -1006,9 +1203,13 @@ export default function AdminReports() {
             </div>
 
             <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <AlertTriangleIcon size={18} className="text-red-500" />
+                관리 필요 반
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">출석률 90% 미만인 반 (낮은 순)</p>
               <RankingTable
-                title="관리 필요 반"
-                icon={<AlertTriangleIcon size={18} className="text-red-500" />}
+                title=""
                 items={[...classStats]
                   .reverse()
                   .filter(c => c.attendanceRate < 90)
@@ -1058,6 +1259,184 @@ export default function AdminReports() {
           onClose={() => setSelectedClass(null)}
         />
       )}
+
+      {/* Calendar Date Detail Modal */}
+      {selectedCalendarDate && (() => {
+        const dateAttendances = filteredAttendances.filter(a => a.date === selectedCalendarDate);
+        const presentCount = dateAttendances.filter(a => a.status === 'present').length;
+        const lateCount = dateAttendances.filter(a => a.status === 'late').length;
+        const absentCount = dateAttendances.filter(a => a.status === 'absent').length;
+        const excusedCount = dateAttendances.filter(a => a.status === 'excused').length;
+        const attendanceRate = dateAttendances.length > 0
+          ? ((presentCount + lateCount) / dateAttendances.length * 100).toFixed(1)
+          : '0';
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CalendarIcon size={20} className="text-indigo-500" />
+                  <span className="text-lg font-bold text-gray-800">
+                    {new Date(selectedCalendarDate).toLocaleDateString('ko-KR', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      weekday: 'short'
+                    })}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedCalendarDate(null)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <span className="text-gray-500 text-xl">✕</span>
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto max-h-[calc(80vh-70px)]">
+                {dateAttendances.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-5 gap-3 mb-4">
+                      <div className="text-center p-3 bg-gray-50 rounded-xl">
+                        <div className="text-2xl font-bold text-indigo-600">{dateAttendances.length}</div>
+                        <div className="text-xs text-gray-500">전체</div>
+                      </div>
+                      <div className="text-center p-3 bg-green-50 rounded-xl">
+                        <div className="text-2xl font-bold text-green-600">{presentCount}</div>
+                        <div className="text-xs text-gray-500">출석</div>
+                      </div>
+                      <div className="text-center p-3 bg-yellow-50 rounded-xl">
+                        <div className="text-2xl font-bold text-yellow-600">{lateCount}</div>
+                        <div className="text-xs text-gray-500">지각</div>
+                      </div>
+                      <div className="text-center p-3 bg-red-50 rounded-xl">
+                        <div className="text-2xl font-bold text-red-600">{absentCount}</div>
+                        <div className="text-xs text-gray-500">결석</div>
+                      </div>
+                      <div className="text-center p-3 bg-blue-50 rounded-xl">
+                        <div className="text-2xl font-bold text-blue-600">{excusedCount}</div>
+                        <div className="text-xs text-gray-500">사유결석</div>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600 mb-4 p-3 bg-indigo-50 rounded-lg">
+                      출석률: <span className="font-bold text-indigo-600 text-lg">{attendanceRate}%</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-700 mb-3">출석 기록</div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {dateAttendances.map((a, i) => {
+                          const student = students.find(s => s.id === a.studentId);
+                          return (
+                            <div key={i} className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-lg">
+                              <span className="font-medium text-gray-800">{student?.name || '알 수 없음'}</span>
+                              <span className="text-gray-500">{a.checkInTime || '-'}</span>
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                a.status === 'present' ? 'bg-green-100 text-green-700' :
+                                a.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                                a.status === 'absent' ? 'bg-red-100 text-red-700' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>
+                                {a.status === 'present' ? '출석' :
+                                 a.status === 'late' ? '지각' :
+                                 a.status === 'absent' ? '결석' : '사유결석'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    해당 날짜에 출석 기록이 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Weekday-Hour Heatmap Detail Modal */}
+      {selectedHeatmapCell && (() => {
+        const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+        const cellData = weekdayHeatmapData.find(
+          d => d.dayOfWeek === selectedHeatmapCell.dayOfWeek && d.hour === selectedHeatmapCell.hour
+        );
+        const cellAttendances = filteredAttendances.filter(a => {
+          if (!a.checkInTime) return false;
+          const date = new Date(a.date);
+          const hour = parseHourFromTimeString(a.checkInTime);
+          return date.getDay() === selectedHeatmapCell.dayOfWeek && hour === selectedHeatmapCell.hour;
+        });
+        const presentCount = cellAttendances.filter(a => a.status === 'present').length;
+        const lateCount = cellAttendances.filter(a => a.status === 'late').length;
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ClockIcon size={20} className="text-indigo-500" />
+                  <span className="text-lg font-bold text-gray-800">
+                    {dayLabels[selectedHeatmapCell.dayOfWeek]}요일 {selectedHeatmapCell.hour}시
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedHeatmapCell(null)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <span className="text-gray-500 text-xl">✕</span>
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto max-h-[calc(80vh-70px)]">
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="text-center p-4 bg-indigo-50 rounded-xl">
+                    <div className="text-2xl font-bold text-indigo-600">{cellData?.value || 0}</div>
+                    <div className="text-xs text-gray-500">총 체크인</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-xl">
+                    <div className="text-2xl font-bold text-green-600">{presentCount}</div>
+                    <div className="text-xs text-gray-500">정시 출석</div>
+                  </div>
+                  <div className="text-center p-4 bg-yellow-50 rounded-xl">
+                    <div className="text-2xl font-bold text-yellow-600">{lateCount}</div>
+                    <div className="text-xs text-gray-500">지각</div>
+                  </div>
+                </div>
+
+                {cellAttendances.length > 0 ? (
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">체크인 기록</div>
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {cellAttendances.map((a, i) => {
+                        const student = students.find(s => s.id === a.studentId);
+                        return (
+                          <div key={i} className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-lg">
+                            <span className="font-medium text-gray-800">{student?.name || '알 수 없음'}</span>
+                            <span className="text-gray-500">{a.date} {a.checkInTime}</span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              a.status === 'present' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {a.status === 'present' ? '출석' : '지각'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    해당 시간대에 체크인 기록이 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </AdminLayout>
   );
 }

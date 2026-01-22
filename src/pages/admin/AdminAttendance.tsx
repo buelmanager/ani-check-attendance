@@ -379,22 +379,72 @@ export default function AdminAttendance() {
         </div>
       </div>
 
-      {/* Stats */}
-      {selectedClass && (
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="card text-center">
-            <p className="text-2xl font-bold text-green-400">{presentCount}</p>
-            <p className="text-sm text-gray-500">출석</p>
+      {/* Class Info & Stats */}
+      {selectedClass && selectedClassData && (
+        <>
+          {/* 클래스 정보 카드 */}
+          <div className="card mb-4 bg-gradient-to-r from-indigo-50 to-purple-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-indigo-500 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">{selectedClassData.name}</h2>
+                  <p className="text-sm text-gray-500">
+                    {selectedClassData.description || '클래스 설명 없음'}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-gray-500">등록 학생</div>
+                <div className="text-2xl font-bold text-indigo-600">{classStudents.length}명</div>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-indigo-100">
+              <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                수업 일정
+              </div>
+              {selectedClassData.schedule || selectedClassData.time ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedClassData.schedule && (
+                    <span className="px-3 py-1 bg-white rounded-full text-sm text-indigo-600 font-medium shadow-sm">
+                      {selectedClassData.schedule}
+                    </span>
+                  )}
+                  {selectedClassData.time && (
+                    <span className="px-3 py-1 bg-white rounded-full text-sm text-indigo-600 font-medium shadow-sm">
+                      {selectedClassData.time}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-sm text-gray-400">수업 일정이 설정되지 않았습니다</span>
+              )}
+            </div>
           </div>
-          <div className="card text-center">
-            <p className="text-2xl font-bold text-amber-400">{lateCount}</p>
-            <p className="text-sm text-gray-500">지각</p>
+
+          {/* 출석 통계 */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="card text-center">
+              <p className="text-2xl font-bold text-green-400">{presentCount}</p>
+              <p className="text-sm text-gray-500">출석</p>
+            </div>
+            <div className="card text-center">
+              <p className="text-2xl font-bold text-amber-400">{lateCount}</p>
+              <p className="text-sm text-gray-500">지각</p>
+            </div>
+            <div className="card text-center">
+              <p className="text-2xl font-bold text-red-400">{absentCount}</p>
+              <p className="text-sm text-gray-500">결석</p>
+            </div>
           </div>
-          <div className="card text-center">
-            <p className="text-2xl font-bold text-red-400">{absentCount}</p>
-            <p className="text-sm text-gray-500">결석</p>
-          </div>
-        </div>
+        </>
       )}
 
       {/* Students List */}

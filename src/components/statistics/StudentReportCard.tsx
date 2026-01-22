@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { StudentAttendanceStats } from '../../types/statistics';
 import type { Attendance } from '../../types';
-import { deduplicateAttendances } from '../../services/statisticsService';
+import { deduplicateAttendances, parseHourFromTimeString } from '../../services/statisticsService';
 import AttendanceGauge from './AttendanceGauge';
 import RiskIndicator from './RiskIndicator';
 import CalendarHeatmap from './CalendarHeatmap';
@@ -118,14 +118,16 @@ export default function StudentReportCard({
 
     deduplicatedStudentAttendances.forEach(a => {
       if (a.checkInTime) {
-        const hour = parseInt(a.checkInTime.split(':')[0], 10);
-        if (!hourMap.has(hour)) {
-          hourMap.set(hour, { count: 0, presentCount: 0, lateCount: 0 });
+        const hour = parseHourFromTimeString(a.checkInTime);
+        if (hour !== null && !isNaN(hour)) {
+          if (!hourMap.has(hour)) {
+            hourMap.set(hour, { count: 0, presentCount: 0, lateCount: 0 });
+          }
+          const data = hourMap.get(hour)!;
+          data.count++;
+          if (a.status === 'present') data.presentCount++;
+          else if (a.status === 'late') data.lateCount++;
         }
-        const data = hourMap.get(hour)!;
-        data.count++;
-        if (a.status === 'present') data.presentCount++;
-        else if (a.status === 'late') data.lateCount++;
       }
     });
 
@@ -381,6 +383,7 @@ export default function StudentReportCard({
             </h3>
             <CalendarHeatmap
               data={calendarData}
+              showStatusColors
               onDateClick={(date) => {
                 const attendance = deduplicatedStudentAttendances.find(a => a.date === date) || null;
                 setSelectedDateInfo({ date, attendance });

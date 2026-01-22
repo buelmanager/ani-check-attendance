@@ -97,13 +97,16 @@ export default function WeekdayHeatmap({
         <div>
           <span className="font-medium">피크 시간: </span>
           {(() => {
-            const peak = data.reduce((max, d) => d.value > max.value ? d : max, data[0] || { dayOfWeek: 0, hour: 0, value: 0 });
+            if (!data || data.length === 0) return '데이터 없음';
+            const validData = data.filter(d => d.value > 0 && typeof d.hour === 'number' && !isNaN(d.hour));
+            if (validData.length === 0) return '데이터 없음';
+            const peak = validData.reduce((max, d) => d.value > max.value ? d : max, validData[0]);
             return `${WEEKDAY_LABELS[peak.dayOfWeek]} ${peak.hour}시 (${peak.value}건)`;
           })()}
         </div>
         <div>
           <span className="font-medium">총 건수: </span>
-          {data.reduce((sum, d) => sum + d.value, 0)}건
+          {data.reduce((sum, d) => sum + (d.value || 0), 0)}건
         </div>
       </div>
     </div>

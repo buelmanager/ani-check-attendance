@@ -23,6 +23,29 @@ import { DAY_LABELS } from '../types/statistics';
 // 유틸리티 함수들
 const getDateString = (date: Date): string => date.toISOString().split('T')[0];
 
+// 시간 문자열에서 시간(hour)을 추출하는 함수
+// "오후 04:43", "오전 09:30", "16:43", "09:30" 등 다양한 형식 지원
+export const parseHourFromTimeString = (timeStr: string): number | null => {
+  if (!timeStr) return null;
+
+  // "오후 04:43" 또는 "오전 09:30" 형식 처리
+  const koreanMatch = timeStr.match(/(오전|오후)\s*(\d{1,2}):(\d{2})/);
+  if (koreanMatch) {
+    let hour = parseInt(koreanMatch[2], 10);
+    if (koreanMatch[1] === '오후' && hour !== 12) hour += 12;
+    if (koreanMatch[1] === '오전' && hour === 12) hour = 0;
+    return hour;
+  }
+
+  // "16:43" 또는 "09:30" 형식 처리
+  const simpleMatch = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (simpleMatch) {
+    return parseInt(simpleMatch[1], 10);
+  }
+
+  return null;
+};
+
 // 중복 출석 기록 제거 (같은 학생, 같은 날짜에 여러 기록이 있으면 가장 최신 것만 유지)
 // 덮어쓰기 개념: 같은 날에 여러번 출석 체크해도 마지막 상태만 유효
 // 다른 컴포넌트에서도 사용할 수 있도록 export
@@ -528,9 +551,9 @@ export const statisticsService = {
 
     deduplicated.forEach(a => {
       if (a.checkInTime) {
-        const hour = parseInt(a.checkInTime.split(':')[0], 10);
+        const hour = parseHourFromTimeString(a.checkInTime);
         // 유효한 시간 범위인지 확인 (0-23)
-        if (!isNaN(hour) && hour >= 0 && hour < 24) {
+        if (hour !== null && hour >= 0 && hour < 24) {
           const data = hourly.get(hour);
           if (data) {
             data.total++;
