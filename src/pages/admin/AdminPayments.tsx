@@ -141,6 +141,7 @@ export default function AdminPayments() {
   const [pushSelectedStudents, setPushSelectedStudents] = useState<Set<string>>(new Set());
   const [pushMessage, setPushMessage] = useState({ title: '', message: '' });
   const [isSendingPush, setIsSendingPush] = useState(false);
+  const [pushProgress, setPushProgress] = useState<{ current: number; total: number; currentStudent: string } | null>(null);
 
   // 납부 처리 폼
   const [paymentForm, setPaymentForm] = useState({
@@ -169,6 +170,19 @@ export default function AdminPayments() {
       unsubFees();
     };
   }, []);
+
+  // 모달 열림 시 body 스크롤 방지
+  useEffect(() => {
+    const isAnyModalOpen = showCreateModal || showBulkCreateModal || showPaymentModal || showStatusModal || showPushModal;
+    if (isAnyModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showCreateModal, showBulkCreateModal, showPaymentModal, showStatusModal, showPushModal]);
 
   // 설명 자동 생성
   const generateDescription = (category: CategoryType, targetMonth: string, customDesc: string) => {
@@ -598,11 +612,17 @@ export default function AdminPayments() {
     }
 
     setIsSendingPush(true);
+    const studentIds = Array.from(pushSelectedStudents);
+    setPushProgress({ current: 0, total: studentIds.length, currentStudent: '' });
+
     try {
       let sentCount = 0;
-      for (const studentId of pushSelectedStudents) {
+      for (let i = 0; i < studentIds.length; i++) {
+        const studentId = studentIds[i];
         const student = students.find(s => s.id === studentId);
         if (!student) continue;
+
+        setPushProgress({ current: i + 1, total: studentIds.length, currentStudent: student.name });
 
         const parents = await parentService.getParentsByStudentId(studentId);
         const parentUserIds = parents.map(p => p.userId).filter(Boolean) as string[];
@@ -630,6 +650,7 @@ export default function AdminPayments() {
       alert('알림 전송 중 오류가 발생했습니다.');
     } finally {
       setIsSendingPush(false);
+      setPushProgress(null);
     }
   };
 
@@ -1722,12 +1743,32 @@ export default function AdminPayments() {
                           setPushSelectedStudents(newSet);
                         }}
                         className="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                        disabled={isSendingPush}
                       />
                       <span className="text-sm text-gray-700">{student.name}</span>
                     </label>
                   ))}
                 </div>
               </div>
+
+              {/* 진행상황 표시 */}
+              {pushProgress && (
+                <div className="bg-accent/10 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-accent">전송 진행중...</span>
+                    <span className="text-sm text-accent">{pushProgress.current}/{pushProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                    <div
+                      className="bg-accent h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(pushProgress.current / pushProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    현재: {pushProgress.currentStudent}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="p-6 border-t border-gray-200 flex gap-3">
               <button
@@ -1746,7 +1787,9 @@ export default function AdminPayments() {
                 disabled={isSendingPush || pushSelectedStudents.size === 0}
                 className="flex-1 btn-primary"
               >
-                {isSendingPush ? '전송 중...' : `${pushSelectedStudents.size}명에게 전송`}
+                {isSendingPush
+                  ? (pushProgress ? `${pushProgress.current}/${pushProgress.total}` : '준비 중...')
+                  : `${pushSelectedStudents.size}명에게 전송`}
               </button>
             </div>
           </div>

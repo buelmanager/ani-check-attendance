@@ -8,6 +8,7 @@ export default function ParentNotifications() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -20,8 +21,11 @@ export default function ParentNotifications() {
     return unsub;
   }, [user]);
 
-  const handleMarkAsRead = async (id: string) => {
-    await notificationService.markAsRead(id);
+  const handleOpenNotification = async (notif: Notification) => {
+    setSelectedNotification(notif);
+    if (!notif.isRead) {
+      await notificationService.markAsRead(notif.id);
+    }
   };
 
   const handleMarkAllAsRead = async () => {
@@ -90,6 +94,37 @@ export default function ParentNotifications() {
     return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
   };
 
+  const formatFullTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getTypeLabel = (type: Notification['type']) => {
+    switch (type) {
+      case 'checkin': return '출석';
+      case 'late': return '지각';
+      case 'absent': return '결석';
+      case 'announcement': return '공지';
+      default: return '알림';
+    }
+  };
+
+  const getTypeLabelColor = (type: Notification['type']) => {
+    switch (type) {
+      case 'checkin': return 'bg-green-100 text-green-700';
+      case 'late': return 'bg-yellow-100 text-yellow-700';
+      case 'absent': return 'bg-red-100 text-red-700';
+      case 'announcement': return 'bg-blue-100 text-blue-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   if (isLoading) {
@@ -131,7 +166,7 @@ export default function ParentNotifications() {
             {notifications.map((notif) => (
               <button
                 key={notif.id}
-                onClick={() => !notif.isRead && handleMarkAsRead(notif.id)}
+                onClick={() => handleOpenNotification(notif)}
                 className={`w-full text-left rounded-xl p-4 transition-colors ${
                   notif.isRead
                     ? 'bg-white'
@@ -149,7 +184,7 @@ export default function ParentNotifications() {
                         <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0"></span>
                       )}
                     </div>
-                    <p className={`text-sm mt-1 ${notif.isRead ? 'text-gray-500' : 'text-gray-600'}`}>
+                    <p className={`text-sm mt-1 line-clamp-2 ${notif.isRead ? 'text-gray-500' : 'text-gray-600'}`}>
                       {notif.message}
                     </p>
                     <p className="text-xs text-gray-400 mt-2">
@@ -159,6 +194,50 @@ export default function ParentNotifications() {
                 </div>
               </button>
             ))}
+          </div>
+        )}
+
+        {/* 알림 상세 모달 */}
+        {selectedNotification && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-bold text-lg text-gray-900">알림 상세</h3>
+                <button
+                  onClick={() => setSelectedNotification(null)}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto">
+                <div className="flex items-center gap-3 mb-4">
+                  {getTypeIcon(selectedNotification.type)}
+                  <div>
+                    <span className={`px-2 py-1 text-xs rounded-full ${getTypeLabelColor(selectedNotification.type)}`}>
+                      {getTypeLabel(selectedNotification.type)}
+                    </span>
+                  </div>
+                </div>
+                <h4 className="text-xl font-bold text-gray-900 mb-2">{selectedNotification.title}</h4>
+                <p className="text-sm text-gray-500 mb-4">
+                  {formatFullTime(selectedNotification.createdAt)}
+                </p>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedNotification.message}</p>
+                </div>
+              </div>
+              <div className="p-4 border-t border-gray-100">
+                <button
+                  onClick={() => setSelectedNotification(null)}
+                  className="w-full py-3 bg-accent text-white rounded-xl font-medium hover:bg-accent/90 transition-colors"
+                >
+                  확인
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
