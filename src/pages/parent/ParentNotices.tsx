@@ -67,8 +67,9 @@ export default function ParentNotices() {
       const classIds = classes.map(c => c.id);
 
       // 필터링: 전체 공지 OR 자녀의 클래스 공지 OR 자녀 개인 공지
+      // targetType이 없거나 'all'인 경우 전체 공지로 처리
       const filtered = allAnnouncements.filter(a => {
-        if (a.targetType === 'all') return true;
+        if (!a.targetType || a.targetType === 'all') return true;
         if (a.targetType === 'class' && a.classIds?.some(id => classIds.includes(id))) return true;
         if (a.targetType === 'student' && a.studentIds?.some(id => childIds.includes(id))) return true;
         return false;

@@ -76,6 +76,13 @@ export default function AdminReports() {
   const [selectedHeatmapCell, setSelectedHeatmapCell] = useState<{ dayOfWeek: number; hour: number } | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
 
+  // 차트 상세 팝업 상태
+  const [chartDetailPopup, setChartDetailPopup] = useState<{
+    type: 'weekly' | 'donut' | 'trend' | 'dayOfWeek' | 'hourly' | 'checkInMethod';
+    title: string;
+    data?: unknown;
+  } | null>(null);
+
   // 기간 선택 시 날짜 범위 자동 설정
   useEffect(() => {
     const end = new Date();
@@ -472,10 +479,14 @@ export default function AdminReports() {
 
           {/* Charts Row */}
           <div className="grid lg:grid-cols-2 gap-6">
-            <div className="card">
+            <div
+              className="card cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setChartDetailPopup({ type: 'weekly', title: '주간 출석률 상세' })}
+            >
               <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <BarChart2Icon size={18} className="text-indigo-500" />
                 주간 출석률
+                <span className="text-xs text-indigo-400 ml-auto">클릭하여 상세보기</span>
               </h3>
               <p className="text-sm text-gray-500 mb-4">
                 최근 7일간의 일별 출석률 변화를 보여줍니다.
@@ -488,10 +499,14 @@ export default function AdminReports() {
               />
             </div>
 
-            <div className="card">
+            <div
+              className="card cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setChartDetailPopup({ type: 'donut', title: '출석 현황 분포 상세' })}
+            >
               <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <PieChartIcon size={18} className="text-indigo-500" />
                 출석 현황 분포
+                <span className="text-xs text-indigo-400 ml-auto">클릭하여 상세보기</span>
               </h3>
               <p className="text-sm text-gray-500 mb-4">
                 전체 출석 기록을 출석/지각/결석/사유결석으로 나눈 비율입니다.
@@ -510,10 +525,14 @@ export default function AdminReports() {
           </div>
 
           {/* Trend Chart */}
-          <div className="card">
+          <div
+            className="card cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => setChartDetailPopup({ type: 'trend', title: '월별 출석률 추세 상세' })}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <LineChartIcon size={18} className="text-indigo-500" />
               월별 출석률 추세
+              <span className="text-xs text-indigo-400 ml-auto">클릭하여 상세보기</span>
             </h3>
             <p className="text-sm text-gray-500 mb-4">
               최근 6개월간 출석률이 어떻게 변화했는지 보여줍니다.
@@ -910,10 +929,14 @@ export default function AdminReports() {
           </div>
 
           {/* Day of Week Stats */}
-          <div className="card">
+          <div
+            className="card cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => setChartDetailPopup({ type: 'dayOfWeek', title: '요일별 출석 현황 상세' })}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <BarChart2Icon size={18} className="text-indigo-500" />
               요일별 출석 현황
+              <span className="text-xs text-indigo-400 ml-auto">클릭하여 상세보기</span>
             </h3>
             <p className="text-sm text-gray-500 mb-4">
               요일별 출석률을 비교합니다. <span className="text-green-600 font-medium">초록</span>=90% 이상(우수),
@@ -933,14 +956,19 @@ export default function AdminReports() {
           </div>
 
           {/* Hourly Stats */}
-          <div className="card">
+          <div
+            className="card cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => setChartDetailPopup({ type: 'hourly', title: '시간대별 출석 분포 상세' })}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <ClockIcon size={18} className="text-indigo-500" />
               시간대별 출석 분포
+              <span className="text-xs text-indigo-400 ml-auto">클릭하여 상세보기</span>
             </h3>
             <p className="text-sm text-gray-500 mb-4">
-              시간대별로 몇 명이 출석했는지 보여줍니다. 막대 아래에 출석/지각 건수가 표시됩니다.
-              수업 시간 조정이나 피크 시간 파악에 활용하세요.
+              시간대별로 몇 명이 출석 체크했는지 보여줍니다.
+              <span className="text-gray-400">(결석은 체크인 시간이 없어 미포함)</span>
+              막대 아래에 출석/지각 건수가 표시됩니다.
             </p>
             <div className="overflow-x-auto">
               <BarChart
@@ -958,10 +986,14 @@ export default function AdminReports() {
           </div>
 
           {/* Check-in Method Stats */}
-          <div className="card">
+          <div
+            className="card cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => setChartDetailPopup({ type: 'checkInMethod', title: '출석 체크 방법 상세' })}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <ActivityIcon size={18} className="text-indigo-500" />
               출석 체크 방법
+              <span className="text-xs text-indigo-400 ml-auto">클릭하여 상세보기</span>
             </h3>
             <p className="text-sm text-gray-500 mb-4">
               학생들이 어떤 방법으로 출석 체크를 했는지 보여줍니다.
@@ -1357,6 +1389,356 @@ export default function AdminReports() {
           </div>
         );
       })()}
+
+      {/* Chart Detail Popup Modal */}
+      {chartDetailPopup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {chartDetailPopup.type === 'weekly' && <BarChart2Icon size={20} className="text-indigo-500" />}
+                {chartDetailPopup.type === 'donut' && <PieChartIcon size={20} className="text-indigo-500" />}
+                {chartDetailPopup.type === 'trend' && <LineChartIcon size={20} className="text-indigo-500" />}
+                {chartDetailPopup.type === 'dayOfWeek' && <CalendarDaysIcon size={20} className="text-indigo-500" />}
+                {chartDetailPopup.type === 'hourly' && <ClockIcon size={20} className="text-indigo-500" />}
+                {chartDetailPopup.type === 'checkInMethod' && <ActivityIcon size={20} className="text-indigo-500" />}
+                <span className="text-lg font-bold text-gray-800">{chartDetailPopup.title}</span>
+              </div>
+              <button
+                onClick={() => setChartDetailPopup(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <span className="text-gray-500 text-xl">✕</span>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-70px)]">
+              {/* 주간 출석률 상세 */}
+              {chartDetailPopup.type === 'weekly' && (
+                <div>
+                  <div className="grid grid-cols-7 gap-2 mb-6">
+                    {weeklyChartData.map((day, i) => (
+                      <div key={i} className="text-center p-3 bg-gray-50 rounded-xl">
+                        <div className="text-xs text-gray-500 mb-1">{day.subLabel}</div>
+                        <div className="text-sm font-medium text-gray-700">{day.label}</div>
+                        <div className={`text-xl font-bold mt-2 ${
+                          day.value >= 90 ? 'text-green-600' :
+                          day.value >= 80 ? 'text-indigo-600' : 'text-red-600'
+                        }`}>{day.value}%</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-sm text-gray-600 mb-4">
+                    <span className="font-medium">기간:</span> 최근 7일간의 일별 출석률
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-700 mb-2">일별 상세 현황</div>
+                    {dailyStats.slice(-7).map((day, i) => (
+                      <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <span className="text-sm font-bold text-indigo-600">{DAY_LABELS[day.dayOfWeek]}</span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-800">{day.date}</div>
+                            <div className="text-xs text-gray-500">총 {day.total}건</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-green-600">{day.present}</div>
+                            <div className="text-xs text-gray-400">출석</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-yellow-600">{day.late}</div>
+                            <div className="text-xs text-gray-400">지각</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-red-600">{day.absent}</div>
+                            <div className="text-xs text-gray-400">결석</div>
+                          </div>
+                          <div className={`text-lg font-bold ${
+                            day.attendanceRate >= 90 ? 'text-green-600' :
+                            day.attendanceRate >= 80 ? 'text-indigo-600' : 'text-red-600'
+                          }`}>{day.attendanceRate}%</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 출석 현황 분포 상세 */}
+              {chartDetailPopup.type === 'donut' && (
+                <div>
+                  <div className="flex justify-center mb-6">
+                    <DonutChart
+                      data={statusDonutData}
+                      size={200}
+                      centerValue={`${basicStats.attendanceRate}%`}
+                      centerLabel="출석률"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="p-4 bg-green-50 rounded-xl text-center">
+                      <div className="text-3xl font-bold text-green-600">{basicStats.present}</div>
+                      <div className="text-sm text-gray-500 mt-1">출석</div>
+                      <div className="text-xs text-green-600 mt-1">
+                        {basicStats.total > 0 ? ((basicStats.present / basicStats.total) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                    <div className="p-4 bg-yellow-50 rounded-xl text-center">
+                      <div className="text-3xl font-bold text-yellow-600">{basicStats.late}</div>
+                      <div className="text-sm text-gray-500 mt-1">지각</div>
+                      <div className="text-xs text-yellow-600 mt-1">
+                        {basicStats.total > 0 ? ((basicStats.late / basicStats.total) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                    <div className="p-4 bg-red-50 rounded-xl text-center">
+                      <div className="text-3xl font-bold text-red-600">{basicStats.absent}</div>
+                      <div className="text-sm text-gray-500 mt-1">결석</div>
+                      <div className="text-xs text-red-600 mt-1">
+                        {basicStats.total > 0 ? ((basicStats.absent / basicStats.total) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                    <div className="p-4 bg-blue-50 rounded-xl text-center">
+                      <div className="text-3xl font-bold text-blue-600">{basicStats.excused}</div>
+                      <div className="text-sm text-gray-500 mt-1">사유결석</div>
+                      <div className="text-xs text-blue-600 mt-1">
+                        {basicStats.total > 0 ? ((basicStats.excused / basicStats.total) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-indigo-50 rounded-xl">
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">총 출석 기록:</span> {basicStats.total}건
+                    </div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      <span className="font-medium">기간:</span> {dateRange.start} ~ {dateRange.end}
+                    </div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      <span className="font-medium">출석률 계산:</span> (출석 + 지각) / 전체 × 100
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 월별 추세 상세 */}
+              {chartDetailPopup.type === 'trend' && (
+                <div>
+                  <div className="mb-6">
+                    <TrendChart
+                      data={trendComparisonData}
+                      title=""
+                      height={250}
+                      showComparison={true}
+                      valueLabel="현재"
+                      comparisonLabel="이전"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-700 mb-2">월별 상세 현황</div>
+                    {trendComparisonData.map((month, i) => (
+                      <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <span className="text-sm font-bold text-indigo-600">{month.label.replace('월', '')}</span>
+                          </div>
+                          <span className="font-medium text-gray-800">{month.label}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className={`text-lg font-bold ${
+                            month.value >= 90 ? 'text-green-600' :
+                            month.value >= 80 ? 'text-indigo-600' : 'text-red-600'
+                          }`}>{month.value}%</div>
+                          {month.previousValue !== undefined && (
+                            <div className={`text-sm ${
+                              month.value > month.previousValue ? 'text-green-500' :
+                              month.value < month.previousValue ? 'text-red-500' : 'text-gray-400'
+                            }`}>
+                              {month.value > month.previousValue ? '↑' : month.value < month.previousValue ? '↓' : '→'}
+                              {Math.abs(month.value - month.previousValue).toFixed(1)}%
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 요일별 출석 현황 상세 */}
+              {chartDetailPopup.type === 'dayOfWeek' && (
+                <div>
+                  <div className="mb-6">
+                    <BarChart
+                      data={dayOfWeekStats.map(d => ({
+                        label: d.dayName,
+                        value: d.stats.attendanceRate,
+                        color: d.stats.attendanceRate >= 90 ? '#22c55e' :
+                               d.stats.attendanceRate >= 80 ? '#6366f1' : '#ef4444'
+                      }))}
+                      maxValue={100}
+                      height={200}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-700 mb-2">요일별 상세 현황</div>
+                    {dayOfWeekStats.map((day, i) => (
+                      <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            day.stats.attendanceRate >= 90 ? 'bg-green-100' :
+                            day.stats.attendanceRate >= 80 ? 'bg-indigo-100' : 'bg-red-100'
+                          }`}>
+                            <span className={`text-sm font-bold ${
+                              day.stats.attendanceRate >= 90 ? 'text-green-600' :
+                              day.stats.attendanceRate >= 80 ? 'text-indigo-600' : 'text-red-600'
+                            }`}>{day.dayName}</span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-800">{day.dayName}요일</div>
+                            <div className="text-xs text-gray-500">총 {day.stats.total}건</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-green-600">{day.stats.present}</div>
+                            <div className="text-xs text-gray-400">출석</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-yellow-600">{day.stats.late}</div>
+                            <div className="text-xs text-gray-400">지각</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-red-600">{day.stats.absent}</div>
+                            <div className="text-xs text-gray-400">결석</div>
+                          </div>
+                          <div className={`text-lg font-bold ${
+                            day.stats.attendanceRate >= 90 ? 'text-green-600' :
+                            day.stats.attendanceRate >= 80 ? 'text-indigo-600' : 'text-red-600'
+                          }`}>{day.stats.attendanceRate}%</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 시간대별 출석 분포 상세 */}
+              {chartDetailPopup.type === 'hourly' && (
+                <div>
+                  <div className="mb-6 overflow-x-auto">
+                    <BarChart
+                      data={hourlyStats
+                        .filter(h => h.count > 0)
+                        .map(h => ({
+                          label: `${h.hour}시`,
+                          value: h.count,
+                          subLabel: `출석 ${h.presentCount} / 지각 ${h.lateCount}`
+                        }))}
+                      height={200}
+                      showPercent={false}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-700 mb-2">시간대별 상세 현황</div>
+                    {hourlyStats.filter(h => h.count > 0).map((hour, i) => (
+                      <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <span className="text-sm font-bold text-indigo-600">{hour.hour}시</span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-800">{hour.hour}:00 ~ {hour.hour}:59</div>
+                            <div className="text-xs text-gray-500">총 {hour.count}건 체크인</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-green-600">{hour.presentCount}</div>
+                            <div className="text-xs text-gray-400">출석</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-sm font-bold text-yellow-600">{hour.lateCount}</div>
+                            <div className="text-xs text-gray-400">지각</div>
+                          </div>
+                          <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 rounded-full"
+                              style={{ width: `${(hour.count / Math.max(...hourlyStats.map(h => h.count))) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 p-4 bg-gray-100 rounded-xl text-sm text-gray-600">
+                    <span className="font-medium">참고:</span> 결석은 체크인 시간이 없어 이 통계에 포함되지 않습니다.
+                  </div>
+                </div>
+              )}
+
+              {/* 출석 체크 방법 상세 */}
+              {chartDetailPopup.type === 'checkInMethod' && (
+                <div>
+                  <div className="flex justify-center mb-6">
+                    <DonutChart
+                      data={[
+                        { label: 'QR 체크', value: checkInMethodStats.qr, color: '#6366f1' },
+                        { label: '수동 체크', value: checkInMethodStats.manual, color: '#8b5cf6' },
+                        { label: 'GPS 체크', value: checkInMethodStats.gps, color: '#a855f7' }
+                      ]}
+                      size={200}
+                    />
+                  </div>
+                  {(() => {
+                    const methodTotal = checkInMethodStats.qr + checkInMethodStats.manual + checkInMethodStats.gps;
+                    return (
+                      <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div className="p-4 bg-indigo-50 rounded-xl text-center">
+                          <div className="text-3xl font-bold text-indigo-600">{checkInMethodStats.qr}</div>
+                          <div className="text-sm text-gray-500 mt-1">QR 체크</div>
+                          <div className="text-xs text-indigo-600 mt-1">
+                            {methodTotal > 0
+                              ? ((checkInMethodStats.qr / methodTotal) * 100).toFixed(1)
+                              : 0}%
+                          </div>
+                        </div>
+                        <div className="p-4 bg-violet-50 rounded-xl text-center">
+                          <div className="text-3xl font-bold text-violet-600">{checkInMethodStats.manual}</div>
+                          <div className="text-sm text-gray-500 mt-1">수동 체크</div>
+                          <div className="text-xs text-violet-600 mt-1">
+                            {methodTotal > 0
+                              ? ((checkInMethodStats.manual / methodTotal) * 100).toFixed(1)
+                              : 0}%
+                          </div>
+                        </div>
+                        <div className="p-4 bg-purple-50 rounded-xl text-center">
+                          <div className="text-3xl font-bold text-purple-600">{checkInMethodStats.gps}</div>
+                          <div className="text-sm text-gray-500 mt-1">GPS 체크</div>
+                          <div className="text-xs text-purple-600 mt-1">
+                            {methodTotal > 0
+                              ? ((checkInMethodStats.gps / methodTotal) * 100).toFixed(1)
+                              : 0}%
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="p-4 bg-gray-100 rounded-xl">
+                    <div className="text-sm text-gray-600 space-y-2">
+                      <div><span className="font-medium text-indigo-600">QR 체크:</span> QR코드를 스캔하여 출석 체크</div>
+                      <div><span className="font-medium text-violet-600">수동 체크:</span> 관리자가 직접 출석 체크</div>
+                      <div><span className="font-medium text-purple-600">GPS 체크:</span> 위치 기반 자동 출석 체크</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Weekday-Hour Heatmap Detail Modal */}
       {selectedHeatmapCell && (() => {

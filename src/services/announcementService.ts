@@ -43,8 +43,9 @@ export const announcementService = {
       })) as Announcement[];
 
       // 필터링: 전체 공지 OR 해당 클래스 공지 OR 해당 학생 공지
+      // targetType이 없거나 'all'인 경우 전체 공지로 처리
       const filtered = allAnnouncements.filter(a => {
-        if (a.targetType === 'all') return true;
+        if (!a.targetType || a.targetType === 'all') return true;
         if (a.targetType === 'class' && a.classIds?.some(id => classIds.includes(id))) return true;
         if (a.targetType === 'student' && a.studentIds?.includes(studentId)) return true;
         return false;

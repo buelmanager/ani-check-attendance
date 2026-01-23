@@ -101,3 +101,34 @@ export interface Attendance {
   createdAt?: string;
   updatedAt?: string;
 }
+
+// 납부 상태
+export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'overdue';
+
+// 납부 항목
+export interface Payment {
+  id: string;
+  studentId: string;
+  studentName: string;           // 조회 편의를 위해 저장
+  amount: number;                // 청구 금액
+  paidAmount: number;            // 납부된 금액
+  description: string;           // "2025년 1월 수업료"
+  dueDate: string;               // 납부 기한 (YYYY-MM-DD)
+  status: PaymentStatus;
+  paidAt?: string;               // 납부 완료 일시
+  memo?: string;                 // 관리자 메모
+  confirmationRequested?: boolean;  // 학부모 납부 확인 요청 여부
+  confirmationRequestedAt?: string; // 확인 요청 시간
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// 클래스별 수업료 설정
+export interface ClassFee {
+  id: string;
+  classId: string;
+  className: string;
+  monthlyFee: number;            // 월 수업료
+  description?: string;          // 설명
+  updatedAt: string;
+}

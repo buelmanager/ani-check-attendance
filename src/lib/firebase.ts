@@ -161,6 +161,9 @@ export interface RestoreStudentData {
   status?: string;
   inviteCode?: string;
   parentIds?: string[];
+  // 보호자 정보 (단일 시트에서 읽어온 값)
+  parentName?: string;
+  parentPhone?: string;
 }
 
 // 복원용 부모 데이터 타입
@@ -215,6 +218,44 @@ export const batchRestoreStudents = async (
       createdAuthUsers: 0,
       linkedParentStudent: 0,
       errors: [{ index: -1, type: 'general', name: '', error: (error as Error).message }]
+    };
+  }
+};
+
+// 보호자 일괄 삭제 결과 타입
+export interface BatchDeleteParentsResult {
+  success: boolean;
+  totalParents: number;
+  deletedParents: number;
+  deletedAuthUsers: number;
+  updatedStudents: number;
+  errors: Array<{
+    type: string;
+    id?: string;
+    error: string;
+  }>;
+}
+
+// 보호자 일괄 삭제 (서버에서 처리)
+export const batchDeleteParents = async (
+  parentIds: string[]
+): Promise<BatchDeleteParentsResult> => {
+  try {
+    const batchDeleteFn = httpsCallable<
+      { parentIds: string[] },
+      BatchDeleteParentsResult
+    >(functions, 'batchDeleteParents');
+    const result = await batchDeleteFn({ parentIds });
+    return result.data;
+  } catch (error: unknown) {
+    console.error('Error calling batchDeleteParents:', error);
+    return {
+      success: false,
+      totalParents: parentIds.length,
+      deletedParents: 0,
+      deletedAuthUsers: 0,
+      updatedStudents: 0,
+      errors: [{ type: 'general', error: (error as Error).message }]
     };
   }
 };

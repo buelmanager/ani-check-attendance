@@ -89,7 +89,11 @@ export default function AdminAttendance() {
       const className = selectedClassData?.name || '';
       if (student && className) {
         parentService.getParentsByStudentId(studentId).then(parents => {
-          const parentUserIds = parents.map(p => p.userId);
+          // userId가 있는 부모만 필터링 (계정이 활성화된 부모만)
+          const parentUserIds = parents
+            .filter(p => p.userId)
+            .map(p => p.userId) as string[];
+          console.log('[AdminAttendance] Parents found:', parents.length, 'with userId:', parentUserIds.length);
           if (parentUserIds.length > 0) {
             notificationService.notifyParentsOfAttendanceChange(
               parentUserIds,
@@ -394,7 +398,7 @@ export default function AdminAttendance() {
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">{selectedClassData.name}</h2>
                   <p className="text-sm text-gray-500">
-                    {selectedClassData.description || '클래스 설명 없음'}
+                    {selectedClassData.schedule} {selectedClassData.time && `• ${selectedClassData.time}`}
                   </p>
                 </div>
               </div>

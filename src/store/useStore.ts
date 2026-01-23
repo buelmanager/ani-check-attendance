@@ -190,7 +190,7 @@ export const useStore = create<AppState>()(
       }
     }),
     {
-      name: 'anicheck-storage',
+      name: 'checkmate-storage',
       partialize: (state) => ({
         classes: state.classes,
         students: state.students,

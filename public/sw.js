@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ani-check-v5';
+const CACHE_NAME = 'checkmate-v17';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -7,31 +7,43 @@ const urlsToCache = [
 
 // Install event
 self.addEventListener('install', (event) => {
+  console.log('[SW] Installing new version:', CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Opened cache');
+        console.log('[SW] Opened cache');
         return cache.addAll(urlsToCache);
       })
   );
-  self.skipWaiting();
+  // skipWaiting()을 즉시 호출하지 않고, 메시지로 제어
+});
+
+// 클라이언트에서 skipWaiting 요청 시 처리
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] Skip waiting requested');
+    self.skipWaiting();
+  }
 });
 
 // Activate event
 self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating new version:', CACHE_NAME);
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
+            console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      console.log('[SW] Claiming clients');
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
 // Fetch event - Network first, fallback to cache

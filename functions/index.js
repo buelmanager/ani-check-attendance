@@ -817,7 +817,7 @@ exports.batchRestoreStudents = onCall(
       }
     }
 
-    // 2. 학생 데이터 복원
+    // 2. 학생 데이터 복원 (보호자 정보 포함)
     for (let i = 0; i < students.length; i++) {
       const studentData = students[i];
 
@@ -828,59 +828,186 @@ exports.batchRestoreStudents = onCall(
         const studentEmail = studentPhone ? generateStudentEmail(studentPhone) : `student_${Date.now()}_${i}@academy.local`;
         const inviteCode = studentData.inviteCode || generateInviteCode();
 
-        // 학생 문서 생성 (parentIds는 나중에 매핑)
-        const studentDocData = {
-          name: studentData.name,
-          phone: studentData.phone || '',
-          birthDate: studentData.birthDate || null,
-          gender: studentData.gender || null,
-          school: studentData.school || '',
-          grade: studentData.grade || '',
-          address: studentData.address || '',
-          notes: studentData.notes || '',
-          status: studentData.status || 'active',
-          inviteCode,
-          parentIds: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
+        // 기존 학생 확인 (전화번호로 중복 체크)
+        let existingStudentId = null;
+        let studentRef = null;
+        let newStudentId = null;
 
-        const studentRef = await db.collection("students").add(studentDocData);
-        const newStudentId = studentRef.id;
-        studentNameToId.set(studentData.name, newStudentId);
-        console.log(`Created student document: ${newStudentId}`);
+        if (studentData.phone) {
+          const existingStudentQuery = await db.collection("students")
+            .where("phone", "==", studentData.phone)
+            .limit(1)
+            .get();
 
-        // 학생 Auth 계정 생성
-        if (studentPhone) {
-          try {
-            const studentUser = await auth.createUser({
-              email: studentEmail,
-              password: studentPhone,
-              displayName: studentData.name
-            });
-            const studentUid = studentUser.uid;
-
-            await studentRef.update({ userId: studentUid });
-
-            await db.collection("authMappings").doc(`student_${studentPhone}`).set({
-              userType: 'student',
-              firestoreId: newStudentId,
-              firebaseUid: studentUid,
-              email: studentEmail,
-              name: studentData.name,
-              createdAt: new Date()
-            });
-
-            results.createdAuthUsers++;
-            console.log(`Created student auth: ${studentUid}`);
-          } catch (authError) {
-            if (authError.code !== 'auth/email-already-exists') {
-              console.error(`Student auth error:`, authError.message);
-            }
+          if (!existingStudentQuery.empty) {
+            existingStudentId = existingStudentQuery.docs[0].id;
+            studentRef = existingStudentQuery.docs[0].ref;
+            newStudentId = existingStudentId;
+            studentNameToId.set(studentData.name, existingStudentId);
+            console.log(`Student already exists (phone: ${studentData.phone}): ${existingStudentId}, skipping creation`);
           }
         }
 
-        results.createdStudents++;
+        // 기존 학생이 없으면 새로 생성
+        if (!existingStudentId) {
+          // 학생 문서 생성 (parentIds는 나중에 매핑)
+          const studentDocData = {
+            name: studentData.name,
+            phone: studentData.phone || '',
+            birthDate: studentData.birthDate || null,
+            gender: studentData.gender || null,
+            school: studentData.school || '',
+            grade: studentData.grade || '',
+            address: studentData.address || '',
+            notes: studentData.notes || '',
+            status: studentData.status || 'active',
+            inviteCode,
+            parentIds: [],
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+
+          studentRef = await db.collection("students").add(studentDocData);
+          newStudentId = studentRef.id;
+          studentNameToId.set(studentData.name, newStudentId);
+          console.log(`Created student document: ${newStudentId}`);
+
+          // 학생 Auth 계정 생성 (새로 생성한 학생만)
+          if (studentPhone) {
+            try {
+              const studentUser = await auth.createUser({
+                email: studentEmail,
+                password: studentPhone,
+                displayName: studentData.name
+              });
+              const studentUid = studentUser.uid;
+
+              await studentRef.update({ userId: studentUid });
+
+              await db.collection("authMappings").doc(`student_${studentPhone}`).set({
+                userType: 'student',
+                firestoreId: newStudentId,
+                firebaseUid: studentUid,
+                email: studentEmail,
+                name: studentData.name,
+                createdAt: new Date()
+              });
+
+              results.createdAuthUsers++;
+              console.log(`Created student auth: ${studentUid}`);
+            } catch (authError) {
+              if (authError.code !== 'auth/email-already-exists') {
+                console.error(`Student auth error:`, authError.message);
+              }
+            }
+          }
+
+          results.createdStudents++;
+        } // if (!existingStudentId) 끝
+
+        // 3. 학생 데이터에 포함된 보호자 정보 처리 (단일 시트 백업에서 복원 시)
+        if (studentData.parentName && studentData.parentPhone) {
+          const parentPhone = studentData.parentPhone.replace(/[^0-9]/g, '');
+          const parentEmail = generateGuardianEmail(parentPhone);
+
+          console.log(`Processing embedded parent for ${studentData.name}: ${studentData.parentName} (${studentData.parentPhone})`);
+
+          // 기존 부모 확인 (전화번호로)
+          let existingParentId = parentPhoneToId.get(studentData.parentPhone);
+
+          if (!existingParentId) {
+            const existingQuery = await db.collection("parents")
+              .where("phone", "==", studentData.parentPhone)
+              .limit(1)
+              .get();
+
+            if (!existingQuery.empty) {
+              existingParentId = existingQuery.docs[0].id;
+              parentPhoneToId.set(studentData.parentPhone, existingParentId);
+              console.log(`Found existing parent: ${existingParentId}`);
+            }
+          }
+
+          if (existingParentId) {
+            // 기존 부모에 학생 연결
+            const parentDoc = await db.collection("parents").doc(existingParentId).get();
+            if (parentDoc.exists) {
+              const pData = parentDoc.data();
+              const currentStudentIds = pData.studentIds || [];
+              if (!currentStudentIds.includes(newStudentId)) {
+                await db.collection("parents").doc(existingParentId).update({
+                  studentIds: [...currentStudentIds, newStudentId],
+                  updatedAt: new Date()
+                });
+              }
+            }
+
+            // 학생 문서에 parentId 추가
+            await studentRef.update({
+              parentIds: [existingParentId],
+              updatedAt: new Date()
+            });
+
+            results.linkedParentStudent++;
+            console.log(`Linked student ${studentData.name} to existing parent ${existingParentId}`);
+
+          } else {
+            // 새 부모 생성
+            const parentDocData = {
+              name: studentData.parentName,
+              phone: studentData.parentPhone,
+              email: parentEmail,
+              studentIds: [newStudentId],
+              createdAt: new Date(),
+              updatedAt: new Date()
+            };
+
+            const parentRef = await db.collection("parents").add(parentDocData);
+            const newParentId = parentRef.id;
+            parentPhoneToId.set(studentData.parentPhone, newParentId);
+            console.log(`Created parent document: ${newParentId}`);
+
+            // 부모 Auth 계정 생성
+            if (parentPhone) {
+              try {
+                const parentUser = await auth.createUser({
+                  email: parentEmail,
+                  password: parentPhone,
+                  displayName: studentData.parentName
+                });
+                const parentUid = parentUser.uid;
+
+                await parentRef.update({ userId: parentUid });
+
+                await db.collection("authMappings").doc(`guardian_${parentPhone}`).set({
+                  userType: 'guardian',
+                  firestoreId: newParentId,
+                  firebaseUid: parentUid,
+                  email: parentEmail,
+                  name: studentData.parentName,
+                  createdAt: new Date()
+                });
+
+                results.createdAuthUsers++;
+                console.log(`Created parent auth: ${parentUid}`);
+              } catch (authError) {
+                if (authError.code !== 'auth/email-already-exists') {
+                  console.error(`Parent auth error:`, authError.message);
+                }
+              }
+            }
+
+            // 학생 문서에 parentId 추가
+            await studentRef.update({
+              parentIds: [newParentId],
+              updatedAt: new Date()
+            });
+
+            results.createdParents++;
+            results.linkedParentStudent++;
+            console.log(`Created and linked new parent ${newParentId} for student ${studentData.name}`);
+          }
+        }
 
       } catch (error) {
         console.error(`Error restoring student ${i}:`, error);
@@ -956,6 +1083,175 @@ exports.batchRestoreStudents = onCall(
     }
 
     console.log(`Batch restore completed: ${results.createdStudents} students, ${results.createdParents} parents, ${results.createdAuthUsers} auth users, ${results.linkedParentStudent} links`);
+    return results;
+  }
+);
+
+/**
+ * 보호자 일괄 삭제 (서버에서 처리) - 최적화 버전
+ * Firestore batch write와 병렬 처리로 성능 개선
+ */
+exports.batchDeleteParents = onCall(
+  {
+    region: "asia-northeast3",
+    timeoutSeconds: 540,
+    memory: "1GiB"
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "인증이 필요합니다.");
+    }
+
+    const { parentIds } = request.data;
+    if (!parentIds || !Array.isArray(parentIds) || parentIds.length === 0) {
+      throw new HttpsError("invalid-argument", "삭제할 보호자 ID 배열이 필요합니다.");
+    }
+
+    // 호출자가 관리자인지 확인
+    const callerUid = request.auth.uid;
+    try {
+      const adminDoc = await db.collection("admins").doc(callerUid).get();
+      if (!adminDoc.exists) {
+        throw new HttpsError("permission-denied", "관리자만 보호자를 삭제할 수 있습니다.");
+      }
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("internal", "관리자 권한 확인 중 오류가 발생했습니다.");
+    }
+
+    console.log(`Starting optimized batch delete for ${parentIds.length} parents`);
+
+    const results = {
+      success: true,
+      totalParents: parentIds.length,
+      deletedParents: 0,
+      deletedAuthUsers: 0,
+      updatedStudents: 0,
+      errors: []
+    };
+
+    const authUidsToDelete = [];
+    const parentPhonesToDelete = [];
+    const studentIdsToUpdate = new Map(); // studentId -> [parentIdsToRemove]
+
+    // 1단계: 모든 부모 문서 병렬 조회
+    console.log('Phase 1: Fetching all parent documents...');
+    const parentDocs = await Promise.all(
+      parentIds.map(id => db.collection("parents").doc(id).get())
+    );
+
+    // 부모 데이터 수집
+    const validParents = [];
+    for (let i = 0; i < parentDocs.length; i++) {
+      const doc = parentDocs[i];
+      if (!doc.exists) {
+        console.log(`Parent not found: ${parentIds[i]}`);
+        continue;
+      }
+
+      const data = doc.data();
+      validParents.push({ id: doc.id, data });
+
+      if (data.userId) {
+        authUidsToDelete.push(data.userId);
+      }
+
+      if (data.phone) {
+        const cleanPhone = data.phone.replace(/[^0-9]/g, '');
+        parentPhonesToDelete.push(cleanPhone);
+      }
+
+      // 연결된 학생들 수집
+      if (data.studentIds && data.studentIds.length > 0) {
+        for (const studentId of data.studentIds) {
+          if (!studentIdsToUpdate.has(studentId)) {
+            studentIdsToUpdate.set(studentId, []);
+          }
+          studentIdsToUpdate.get(studentId).push(doc.id);
+        }
+      }
+    }
+
+    console.log(`Found ${validParents.length} valid parents to delete`);
+
+    // 2단계: 연결된 학생들의 parentIds 업데이트
+    console.log('Phase 2: Updating student parentIds...');
+    if (studentIdsToUpdate.size > 0) {
+      const studentIds = Array.from(studentIdsToUpdate.keys());
+
+      // 학생 문서 병렬 조회
+      const studentDocs = await Promise.all(
+        studentIds.map(id => db.collection("students").doc(id).get())
+      );
+
+      // 배치로 학생 업데이트
+      for (let i = 0; i < studentDocs.length; i += 500) {
+        const batch = db.batch();
+        const chunk = studentDocs.slice(i, i + 500);
+
+        for (const doc of chunk) {
+          if (!doc.exists) continue;
+          const data = doc.data();
+          const parentsToRemove = studentIdsToUpdate.get(doc.id) || [];
+          const currentParentIds = data.parentIds || [];
+          const updatedParentIds = currentParentIds.filter(pid => !parentsToRemove.includes(pid));
+
+          batch.update(doc.ref, {
+            parentIds: updatedParentIds,
+            updatedAt: new Date()
+          });
+          results.updatedStudents++;
+        }
+
+        await batch.commit();
+        console.log(`Updated students batch ${Math.floor(i/500) + 1}`);
+      }
+    }
+
+    // 3단계: authMappings 삭제
+    console.log('Phase 3: Deleting authMappings...');
+    for (let i = 0; i < parentPhonesToDelete.length; i += 500) {
+      const batch = db.batch();
+      const chunk = parentPhonesToDelete.slice(i, i + 500);
+      chunk.forEach(phone => {
+        batch.delete(db.collection("authMappings").doc(`guardian_${phone}`));
+      });
+      await batch.commit();
+    }
+
+    // 4단계: 부모 문서 삭제
+    console.log('Phase 4: Batch deleting parent documents...');
+    for (let i = 0; i < validParents.length; i += 500) {
+      const batch = db.batch();
+      const chunk = validParents.slice(i, i + 500);
+      chunk.forEach(p => {
+        batch.delete(db.collection("parents").doc(p.id));
+      });
+      await batch.commit();
+      results.deletedParents += chunk.length;
+      console.log(`Deleted parents batch ${Math.floor(i/500) + 1}`);
+    }
+
+    // 5단계: Firebase Auth 일괄 삭제
+    console.log('Phase 5: Deleting Auth users...');
+    if (authUidsToDelete.length > 0) {
+      try {
+        for (let i = 0; i < authUidsToDelete.length; i += 1000) {
+          const chunk = authUidsToDelete.slice(i, i + 1000);
+          const deleteResult = await auth.deleteUsers(chunk);
+          results.deletedAuthUsers += deleteResult.successCount;
+          console.log(`Auth delete batch ${Math.floor(i/1000) + 1}: ${deleteResult.successCount} succeeded`);
+        }
+      } catch (error) {
+        console.error("Error deleting auth users:", error);
+        results.errors.push({
+          type: 'auth_batch',
+          error: error.message
+        });
+      }
+    }
+
+    console.log(`Batch delete completed: ${results.deletedParents} parents, ${results.deletedAuthUsers} auth users, ${results.updatedStudents} students updated`);
     return results;
   }
 );

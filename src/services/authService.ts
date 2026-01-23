@@ -16,7 +16,7 @@ import {
 import { db, auth, createUserWithoutSignIn } from '../lib/firebase';
 
 // 도메인 설정 (나중에 환경변수로 변경 가능)
-const EMAIL_DOMAIN = 'aniwith.com';
+const EMAIL_DOMAIN = 'aniwid.com';
 
 // 인증번호 유효 시간 (5분)
 const VERIFICATION_CODE_EXPIRY_MINUTES = 5;
@@ -279,8 +279,8 @@ export const authService = {
     // 시도할 이메일 형식들 (새 형식 먼저, 레거시 형식 나중에)
     const emailsToTry = [
       userInfo.email, // authMappings 또는 Firestore에서 가져온 이메일
-      generateStudentEmail(phone), // student_01012345678@aniwith.com
-      generateGuardianEmail(phone), // guardian_01012345678@aniwith.com
+      generateStudentEmail(phone), // student_01012345678@aniwid.com
+      generateGuardianEmail(phone), // guardian_01012345678@aniwid.com
       `${cleanPhone}@phone.local`, // 레거시 형식
     ];
 

@@ -117,7 +117,7 @@ export default function StudentLogin() {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">학생 로그인</h1>
-          <p className="text-gray-500 mt-2">ANI CHECK 출결 관리</p>
+          <p className="text-gray-500 mt-2">CheckMate 출결 관리</p>
         </div>
 
         {step === 'phone' ? (

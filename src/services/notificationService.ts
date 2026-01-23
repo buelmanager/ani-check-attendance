@@ -157,5 +157,54 @@ export const notificationService = {
         isRead: false
       });
     }
+  },
+
+  // 부모에게 청구서 알림 생성
+  async notifyParentsOfPayment(
+    parentUserIds: string[],
+    studentName: string,
+    description: string,
+    amount: number,
+    dueDate: string
+  ): Promise<void> {
+    const formattedAmount = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
+    const formattedDueDate = new Date(dueDate).toLocaleDateString('ko-KR', {
+      month: 'long',
+      day: 'numeric'
+    });
+
+    for (const userId of parentUserIds) {
+      await this.create({
+        userId,
+        type: 'announcement',
+        title: `${studentName} 청구서 발송`,
+        message: `${studentName}님의 ${description} 청구서가 발송되었습니다. 금액: ${formattedAmount}, 납부기한: ${formattedDueDate}`,
+        isRead: false
+      });
+    }
+  },
+
+  // 일괄 청구서 알림 생성 (여러 학부모에게)
+  async notifyBulkPayments(
+    notifications: Array<{
+      parentUserIds: string[];
+      studentName: string;
+      description: string;
+      amount: number;
+      dueDate: string;
+    }>
+  ): Promise<number> {
+    let count = 0;
+    for (const notification of notifications) {
+      await this.notifyParentsOfPayment(
+        notification.parentUserIds,
+        notification.studentName,
+        notification.description,
+        notification.amount,
+        notification.dueDate
+      );
+      count++;
+    }
+    return count;
   }
 };

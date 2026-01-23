@@ -1,10 +1,19 @@
 import { useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useAuth } from '../../contexts/AuthContext';
+import { useServiceWorker } from '../../hooks/useServiceWorker';
+import { APP_VERSION } from '../../config/version';
 
 export default function AdminSettings() {
   const { adminData, user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const { forceUpdate } = useServiceWorker();
+
+  const handleUpdate = async () => {
+    setIsUpdating(true);
+    await forceUpdate();
+  };
 
   const handleExportData = async () => {
     setIsExporting(true);
@@ -22,7 +31,7 @@ export default function AdminSettings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `anicheck-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `checkmate-backup-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -91,15 +100,38 @@ export default function AdminSettings() {
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2">
             <span className="text-gray-500">버전</span>
-            <span className="text-gray-900">1.0.0</span>
+            <span className="text-gray-900">{APP_VERSION}</span>
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-gray-500">앱 이름</span>
-            <span className="text-gray-900">ANI CHECK</span>
+            <span className="text-gray-900">CheckMate</span>
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-gray-500">Firebase 프로젝트</span>
             <span className="text-gray-900">art-academy-80ae5</span>
+          </div>
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              onClick={handleUpdate}
+              disabled={isUpdating}
+              className="w-full flex items-center gap-4 p-4 bg-blue-50 rounded-xl hover:bg-blue-100 transition-all disabled:opacity-50"
+            >
+              <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                {isUpdating ? (
+                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+              </div>
+              <div className="flex-1 text-left">
+                <p className="text-blue-700 font-medium">
+                  {isUpdating ? '업데이트 중...' : '앱 업데이트'}
+                </p>
+                <p className="text-sm text-blue-500">최신 버전으로 업데이트합니다</p>
+              </div>
+            </button>
           </div>
         </div>
       </div>

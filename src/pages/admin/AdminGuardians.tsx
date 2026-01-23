@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { parentService } from '../../services/parentService';
 import { studentService } from '../../services/studentService';
+import { batchDeleteParents } from '../../lib/firebase';
 import type { Parent, Student } from '../../types';
 
 export default function AdminGuardians() {
@@ -11,6 +12,8 @@ export default function AdminGuardians() {
   const [students, setStudents] = useState<Student[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // 데이터 구독
   useEffect(() => {
@@ -28,19 +31,80 @@ export default function AdminGuardians() {
     };
   }, []);
 
-  // 필터링된 보호자 목록
-  const filteredParents = parents.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.phone && p.phone.includes(searchQuery));
-    return matchesSearch;
-  });
+  // 자연 정렬 함수 (숫자를 자연스럽게 정렬: 1, 2, 10, 11 순서)
+  const naturalSort = (a: string, b: string) => {
+    return a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' });
+  };
+
+  // 필터링된 보호자 목록 (자연 정렬 적용)
+  const filteredParents = parents
+    .filter((p) => {
+      const matchesSearch =
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.phone && p.phone.includes(searchQuery));
+      return matchesSearch;
+    })
+    .sort((a, b) => naturalSort(a.name, b.name));
 
   // 학생 ID로 학생 정보 가져오기
   const getStudentById = (studentId: string): Student | undefined => {
     return students.find(s => s.id === studentId);
   };
 
+  // 전체 선택/해제
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredParents.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredParents.map(p => p.id)));
+    }
+  };
+
+  // 개별 선택/해제
+  const handleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  // 선택 삭제 (Cloud Functions 사용)
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+
+    const selectedParents = parents.filter(p => selectedIds.has(p.id));
+    const hasAccountCount = selectedParents.filter(p => p.userId).length;
+
+    let confirmMsg = `선택한 ${selectedIds.size}명의 보호자를 삭제하시겠습니까?`;
+    if (hasAccountCount > 0) {
+      confirmMsg += `\n\n⚠️ ${hasAccountCount}명의 앱 계정도 함께 삭제됩니다.`;
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsDeleting(true);
+    try {
+      // Cloud Functions를 사용하여 일괄 삭제
+      const result = await batchDeleteParents(Array.from(selectedIds));
+
+      setSelectedIds(new Set());
+
+      if (result.success) {
+        alert(`${result.deletedParents}명의 보호자가 삭제되었습니다.${result.deletedAuthUsers > 0 ? `\n(Auth 계정 ${result.deletedAuthUsers}개 삭제)` : ''}`);
+      } else {
+        const errorMessages = result.errors.map(e => e.error).join('\n');
+        alert(`삭제 완료: ${result.deletedParents}명\n\n일부 오류 발생:\n${errorMessages}`);
+      }
+    } catch (error) {
+      console.error('보호자 삭제 실패:', error);
+      alert('삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -65,9 +129,9 @@ export default function AdminGuardians() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative">
+      {/* Search & Actions */}
+      <div className="mb-6 flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
           <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -79,6 +143,22 @@ export default function AdminGuardians() {
             className="input-field !pl-11"
           />
         </div>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={handleDeleteSelected}
+            disabled={isDeleting}
+            className="btn-secondary !bg-red-50 !text-red-600 hover:!bg-red-100 flex items-center gap-2"
+          >
+            {isDeleting ? (
+              <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            )}
+            {selectedIds.size}명 삭제
+          </button>
+        )}
       </div>
 
       {/* Parents Table */}
@@ -87,6 +167,14 @@ export default function AdminGuardians() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-4 text-left">
+                  <input
+                    type="checkbox"
+                    checked={filteredParents.length > 0 && selectedIds.size === filteredParents.length}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 rounded border-gray-300 text-accent focus:ring-accent"
+                  />
+                </th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">이름</th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">연락처</th>
                 <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">연결된 자녀</th>
@@ -100,7 +188,15 @@ export default function AdminGuardians() {
                 const childCount = parent.studentIds?.length || 0;
 
                 return (
-                  <tr key={parent.id} className="hover:bg-gray-50/50">
+                  <tr key={parent.id} className={`hover:bg-gray-50/50 ${selectedIds.has(parent.id) ? 'bg-accent/5' : ''}`}>
+                    <td className="px-4 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(parent.id)}
+                        onChange={() => handleSelect(parent.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-accent focus:ring-accent"
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">

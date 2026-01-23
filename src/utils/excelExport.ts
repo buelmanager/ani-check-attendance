@@ -30,17 +30,9 @@ interface ExportStudentRow {
   입학일: string;
   계정상태: string;
   보호자연결: string;
+  보호자이름: string;
+  보호자연락처: string;
   메모: string;
-  생성일: string;
-}
-
-interface ExportParentRow {
-  이름: string;
-  연락처: string;
-  로그인이메일: string;
-  연결된자녀: string;
-  자녀수: number;
-  계정상태: string;
   생성일: string;
 }
 
@@ -71,16 +63,16 @@ const formatDate = (dateStr: string | undefined): string => {
   }
 };
 
-// 전화번호로 로그인 이메일 생성 (student_01012345678@aniwith.com)
+// 전화번호로 로그인 이메일 생성 (student_01012345678@aniwid.com)
 const generateLoginEmail = (phone: string | undefined, type: 'student' | 'guardian'): string => {
   if (!phone) return '';
   const cleanPhone = phone.replace(/[^0-9]/g, '');
   if (!cleanPhone) return '';
-  return `${type}_${cleanPhone}@aniwith.com`;
+  return `${type}_${cleanPhone}@aniwid.com`;
 };
 
 // 학생 데이터를 엑셀 행 데이터로 변환
-const studentToRow = (student: Student, classes: Class[]): ExportStudentRow => {
+const studentToRow = (student: Student, classes: Class[], parents: Parent[] = []): ExportStudentRow => {
   // 학생이 속한 클래스 이름 목록
   const studentClasses = classes
     .filter(c => c.studentIds.includes(student.id))
@@ -89,6 +81,29 @@ const studentToRow = (student: Student, classes: Class[]): ExportStudentRow => {
 
   // 로그인 이메일 생성 (전화번호가 있는 경우)
   const loginEmail = generateLoginEmail(student.phone, 'student');
+
+  // 보호자 정보 찾기 (연결된 부모들)
+  // 디버그: parentIds와 parents 확인
+  console.log(`[studentToRow] ${student.name}: parentIds=`, student.parentIds, ', parents count=', parents.length);
+  if (parents.length > 0) {
+    console.log(`[studentToRow] ${student.name}: 첫 번째 부모 id=`, parents[0].id, ', studentIds=', parents[0].studentIds);
+  }
+
+  // 방법 1: 학생의 parentIds로 부모 찾기
+  const studentParentsByParentIds = parents.filter(p => student.parentIds?.includes(p.id));
+
+  // 방법 2: 부모의 studentIds로 학생 찾기 (fallback)
+  const studentParentsByStudentIds = parents.filter(p => p.studentIds?.includes(student.id));
+
+  // 둘 중 하나라도 매칭되면 사용
+  const studentParents = studentParentsByParentIds.length > 0
+    ? studentParentsByParentIds
+    : studentParentsByStudentIds;
+
+  console.log(`[studentToRow] ${student.name}: 매칭된 부모 수 (by parentIds)=`, studentParentsByParentIds.length, ', (by studentIds)=', studentParentsByStudentIds.length);
+
+  const parentNames = studentParents.map(p => p.name).filter(name => name).join(', ');
+  const parentPhones = studentParents.map(p => p.phone).filter(phone => phone).join(', ');
 
   return {
     이름: student.name,
@@ -108,30 +123,10 @@ const studentToRow = (student: Student, classes: Class[]): ExportStudentRow => {
     보호자연결: student.parentIds && student.parentIds.length > 0
       ? `${student.parentIds.length}명`
       : '미연결',
+    보호자이름: parentNames || '-',
+    보호자연락처: parentPhones || '-',
     메모: student.notes || '',
     생성일: formatDate(student.createdAt)
-  };
-};
-
-// 부모 데이터를 엑셀 행 데이터로 변환
-const parentToRow = (parent: Parent, students: Student[]): ExportParentRow => {
-  // 연결된 자녀 이름 목록
-  const childNames = students
-    .filter(s => parent.studentIds.includes(s.id))
-    .map(s => s.name)
-    .join(', ');
-
-  // 로그인 이메일 생성 (전화번호가 있는 경우)
-  const loginEmail = generateLoginEmail(parent.phone, 'guardian');
-
-  return {
-    이름: parent.name,
-    연락처: parent.phone || '',
-    로그인이메일: loginEmail || parent.email || '',
-    연결된자녀: childNames || '-',
-    자녀수: parent.studentIds?.length || 0,
-    계정상태: parent.userId ? '활성화' : (parent.phone ? '미활성화' : '연락처없음'),
-    생성일: formatDate(parent.createdAt)
   };
 };
 
@@ -160,6 +155,8 @@ const downloadExcel = (data: ExportStudentRow[], filename: string): void => {
     { wch: 12 },  // 입학일
     { wch: 12 },  // 계정상태
     { wch: 10 },  // 보호자연결
+    { wch: 12 },  // 보호자이름
+    { wch: 15 },  // 보호자연락처
     { wch: 30 },  // 메모
     { wch: 12 },  // 생성일
   ];
@@ -172,18 +169,17 @@ const downloadExcel = (data: ExportStudentRow[], filename: string): void => {
   XLSX.writeFile(wb, filename);
 };
 
-// 엑셀 파일 다운로드 (학생 + 부모 시트)
-const downloadExcelWithParents = (
+// 엑셀 파일 다운로드 (전체 데이터 - 단일 시트)
+const downloadExcelFullBackup = (
   studentData: ExportStudentRow[],
-  parentData: ExportParentRow[],
   filename: string
 ): void => {
   // 워크북 생성
   const wb = XLSX.utils.book_new();
 
-  // 학생 워크시트 생성
-  const studentWs = XLSX.utils.json_to_sheet(studentData);
-  const studentColumnWidths = [
+  // 전체 데이터 워크시트 생성 (학생 + 보호자 정보 포함)
+  const ws = XLSX.utils.json_to_sheet(studentData);
+  const columnWidths = [
     { wch: 10 },  // 이름
     { wch: 10 },  // 초대코드
     { wch: 8 },   // 상태
@@ -199,33 +195,32 @@ const downloadExcelWithParents = (
     { wch: 12 },  // 입학일
     { wch: 12 },  // 계정상태
     { wch: 10 },  // 보호자연결
+    { wch: 12 },  // 보호자이름
+    { wch: 15 },  // 보호자연락처
     { wch: 30 },  // 메모
     { wch: 12 },  // 생성일
   ];
-  studentWs['!cols'] = studentColumnWidths;
-  XLSX.utils.book_append_sheet(wb, studentWs, '학생목록');
-
-  // 부모 워크시트 생성
-  const parentWs = XLSX.utils.json_to_sheet(parentData);
-  const parentColumnWidths = [
-    { wch: 10 },  // 이름
-    { wch: 15 },  // 연락처
-    { wch: 35 },  // 로그인이메일
-    { wch: 20 },  // 연결된자녀
-    { wch: 8 },   // 자녀수
-    { wch: 12 },  // 계정상태
-    { wch: 12 },  // 생성일
-  ];
-  parentWs['!cols'] = parentColumnWidths;
-  XLSX.utils.book_append_sheet(wb, parentWs, '학부모목록');
+  ws['!cols'] = columnWidths;
+  XLSX.utils.book_append_sheet(wb, ws, '전체데이터');
 
   // 파일 다운로드
   XLSX.writeFile(wb, filename);
 };
 
 // 전체 학생 엑셀 내보내기
-export const exportAllStudents = (students: Student[], classes: Class[]): void => {
-  const data = students.map(student => studentToRow(student, classes));
+export const exportAllStudents = (students: Student[], classes: Class[], parents: Parent[] = []): void => {
+  console.log('[exportAllStudents] 학생 수:', students.length);
+  console.log('[exportAllStudents] 클래스 수:', classes.length);
+  console.log('[exportAllStudents] 부모 수:', parents.length);
+  if (students.length > 0) {
+    console.log('[exportAllStudents] 첫 번째 학생:', students[0]);
+    console.log('[exportAllStudents] 첫 번째 학생 parentIds:', students[0].parentIds);
+  }
+  if (parents.length > 0) {
+    console.log('[exportAllStudents] 첫 번째 부모:', parents[0]);
+  }
+
+  const data = students.map(student => studentToRow(student, classes, parents));
   const today = new Date().toISOString().split('T')[0];
   downloadExcel(data, `전체_학생목록_${today}.xlsx`);
 };
@@ -234,9 +229,10 @@ export const exportAllStudents = (students: Student[], classes: Class[]): void =
 export const exportFilteredStudents = (
   students: Student[],
   classes: Class[],
-  filterName?: string
+  filterName?: string,
+  parents: Parent[] = []
 ): void => {
-  const data = students.map(student => studentToRow(student, classes));
+  const data = students.map(student => studentToRow(student, classes, parents));
   const today = new Date().toISOString().split('T')[0];
   const filename = filterName
     ? `${filterName}_학생목록_${today}.xlsx`
@@ -248,11 +244,12 @@ export const exportFilteredStudents = (
 export const exportClassStudents = (
   classInfo: Class,
   students: Student[],
-  allClasses: Class[]
+  allClasses: Class[],
+  parents: Parent[] = []
 ): void => {
   // 해당 클래스에 속한 학생만 필터링
   const classStudents = students.filter(s => classInfo.studentIds.includes(s.id));
-  const data = classStudents.map(student => studentToRow(student, allClasses));
+  const data = classStudents.map(student => studentToRow(student, allClasses, parents));
   const today = new Date().toISOString().split('T')[0];
   downloadExcel(data, `${classInfo.name}_학생목록_${today}.xlsx`);
 };
@@ -261,25 +258,36 @@ export const exportClassStudents = (
 export const exportStudentsByStatus = (
   students: Student[],
   classes: Class[],
-  status: StudentStatus
+  status: StudentStatus,
+  parents: Parent[] = []
 ): void => {
   const filteredStudents = students.filter(s => (s.status || 'active') === status);
-  const data = filteredStudents.map(student => studentToRow(student, classes));
+  const data = filteredStudents.map(student => studentToRow(student, classes, parents));
   const today = new Date().toISOString().split('T')[0];
   const statusLabel = STATUS_LABELS[status];
   downloadExcel(data, `${statusLabel}_학생목록_${today}.xlsx`);
 };
 
-// 전체 백업용 엑셀 내보내기 (학생 + 부모 시트)
+// 전체 백업용 엑셀 내보내기 (단일 시트 - 학생 정보에 보호자 정보 포함)
 export const exportFullBackup = (
   students: Student[],
   classes: Class[],
   parents: Parent[]
 ): void => {
-  const studentData = students.map(student => studentToRow(student, classes));
-  const parentData = parents.map(parent => parentToRow(parent, students));
+  console.log('[exportFullBackup] 학생 수:', students.length);
+  console.log('[exportFullBackup] 클래스 수:', classes.length);
+  console.log('[exportFullBackup] 부모 수:', parents.length);
+  if (students.length > 0) {
+    console.log('[exportFullBackup] 첫 번째 학생:', JSON.stringify(students[0], null, 2));
+  }
+  if (parents.length > 0) {
+    console.log('[exportFullBackup] 첫 번째 부모:', JSON.stringify(parents[0], null, 2));
+  }
+
+  // 학생 데이터에 보호자 정보가 이미 포함되어 있음 (보호자이름, 보호자연락처 컬럼)
+  const studentData = students.map(student => studentToRow(student, classes, parents));
   const today = new Date().toISOString().split('T')[0];
-  downloadExcelWithParents(studentData, parentData, `전체_백업_${today}.xlsx`);
+  downloadExcelFullBackup(studentData, `전체_백업_${today}.xlsx`);
 };
 
 // ============== 엑셀 가져오기 (Import) ==============
@@ -328,28 +336,70 @@ interface ImportStudentData {
   address?: string;
   enrolledAt?: string;
   notes?: string;
+  parentName?: string;  // 보호자 이름 (엑셀에서 읽어온 값)
+  parentPhone?: string; // 보호자 연락처 (엑셀에서 읽어온 값)
 }
 
+// 다양한 엑셀 컬럼명 지원을 위한 헬퍼 함수
+const getColumnValue = (row: Record<string, unknown>, ...possibleNames: string[]): string => {
+  for (const name of possibleNames) {
+    if (row[name] !== undefined && row[name] !== null) {
+      const value = String(row[name]).trim();
+      // '-' 또는 빈 값은 빈 문자열로 처리
+      if (value === '-' || value === '') {
+        return '';
+      }
+      return value;
+    }
+  }
+  return '';
+};
+
 const rowToStudent = (row: Record<string, unknown>): ImportStudentData | null => {
-  const name = String(row['이름'] || '').trim();
+  // 다양한 컬럼명 지원: '이름', '학생명', '성명', 'Name' 등
+  const name = getColumnValue(row, '이름', '학생명', '성명', 'Name', 'name', '학생이름');
   if (!name) return null;
+
+  // 상태: '상태', 'status', '재원상태' 등
+  const statusValue = getColumnValue(row, '상태', 'status', '재원상태');
+
+  // 학년: '학년', 'grade', '학교학년' 등
+  const gradeValue = getColumnValue(row, '학년', 'grade', '학교학년');
+
+  // 연락처: '연락처', '전화번호', '휴대폰', 'phone' 등
+  const phoneValue = getColumnValue(row, '연락처', '전화번호', '휴대폰', 'phone', '핸드폰', '학생연락처');
+
+  // 성별: '성별', 'gender' 등
+  const genderValue = getColumnValue(row, '성별', 'gender');
+
+  // 보호자이름: '보호자이름', '부모이름', '보호자명' 등
+  const parentNameRaw = getColumnValue(row, '보호자이름', '부모이름', '보호자명', '학부모이름', 'parentName');
+  // '-' 또는 빈 값은 undefined로 처리
+  const parentNameValue = parentNameRaw && parentNameRaw !== '-' ? parentNameRaw : undefined;
+
+  // 보호자연락처: '보호자연락처', '부모연락처', '보호자전화' 등
+  const parentPhoneRaw = getColumnValue(row, '보호자연락처', '부모연락처', '보호자전화', '보호자휴대폰', 'parentPhone');
+  // '-' 또는 빈 값은 undefined로 처리
+  const parentPhoneValue = parentPhoneRaw && parentPhoneRaw !== '-' ? parentPhoneRaw : undefined;
 
   return {
     name,
-    inviteCode: String(row['초대코드'] || '').trim() || undefined,
-    status: STATUS_REVERSE[String(row['상태'] || '')] || 'active',
-    grade: String(row['학년'] || '').trim() || undefined,
-    birthDate: parseKoreanDate(String(row['생년월일'] || '')),
-    gender: GENDER_REVERSE[String(row['성별'] || '')] || undefined,
-    school: String(row['학교'] || '').trim() || undefined,
-    phone: String(row['연락처'] || '').trim() || undefined,
-    address: String(row['주소'] || '').trim() || undefined,
-    enrolledAt: parseKoreanDate(String(row['입학일'] || '')),
-    notes: String(row['메모'] || '').trim() || undefined
+    inviteCode: getColumnValue(row, '초대코드', 'inviteCode') || undefined,
+    status: STATUS_REVERSE[statusValue] || 'active',
+    grade: gradeValue || undefined,
+    birthDate: parseKoreanDate(getColumnValue(row, '생년월일', '생일', 'birthDate', '생년월일(YYYY-MM-DD)')),
+    gender: GENDER_REVERSE[genderValue] || undefined,
+    school: getColumnValue(row, '학교', 'school', '학교명') || undefined,
+    phone: phoneValue || undefined,
+    address: getColumnValue(row, '주소', 'address', '거주지') || undefined,
+    enrolledAt: parseKoreanDate(getColumnValue(row, '입학일', '등록일', 'enrolledAt', '입학일자')),
+    notes: getColumnValue(row, '메모', 'notes', '비고', '특이사항') || undefined,
+    parentName: parentNameValue,
+    parentPhone: parentPhoneValue
   };
 };
 
-// 엑셀 파일에서 학생 데이터 읽기
+// 엑셀 파일에서 학생 데이터 읽기 (보호자 정보 포함)
 export const readStudentsFromExcel = (file: File): Promise<ImportStudentData[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -359,26 +409,50 @@ export const readStudentsFromExcel = (file: File): Promise<ImportStudentData[]> 
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'binary' });
 
-        // 첫 번째 시트 또는 '학생목록' 시트 찾기
-        const sheetName = workbook.SheetNames.includes('학생목록')
-          ? '학생목록'
-          : workbook.SheetNames[0];
+        console.log('[readStudentsFromExcel] 시트 목록:', workbook.SheetNames);
+
+        // 시트 우선순위: '전체데이터' > '학생목록' > 첫 번째 시트
+        let sheetName = workbook.SheetNames[0];
+        if (workbook.SheetNames.includes('전체데이터')) {
+          sheetName = '전체데이터';
+        } else if (workbook.SheetNames.includes('학생목록')) {
+          sheetName = '학생목록';
+        }
         const worksheet = workbook.Sheets[sheetName];
+
+        console.log('[readStudentsFromExcel] 사용 시트:', sheetName);
 
         // 시트를 JSON으로 변환
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
 
-        // 학생 데이터로 변환
+        console.log('[readStudentsFromExcel] 총 행 수:', rows.length);
+        if (rows.length > 0) {
+          console.log('[readStudentsFromExcel] 첫 번째 행 컬럼명:', Object.keys(rows[0]));
+          console.log('[readStudentsFromExcel] 첫 번째 행 데이터:', rows[0]);
+        }
+
+        // 학생 데이터로 변환 (보호자 정보 포함)
         const students: ImportStudentData[] = [];
+        let skippedCount = 0;
         for (const row of rows) {
           const student = rowToStudent(row);
           if (student) {
             students.push(student);
+          } else {
+            skippedCount++;
           }
         }
 
+        console.log('[readStudentsFromExcel] 변환된 학생 수:', students.length);
+        console.log('[readStudentsFromExcel] 스킵된 행 수 (이름 없음):', skippedCount);
+
+        // 보호자 정보가 있는 학생 수 확인
+        const studentsWithParent = students.filter(s => s.parentName || s.parentPhone);
+        console.log('[readStudentsFromExcel] 보호자 정보 있는 학생 수:', studentsWithParent.length);
+
         resolve(students);
       } catch (error) {
+        console.error('[readStudentsFromExcel] 오류:', error);
         reject(error);
       }
     };
@@ -398,78 +472,5 @@ export interface ImportResult {
   errors: string[];
 }
 
-// ============== 학부모 엑셀 가져오기 ==============
-
-interface ImportParentData {
-  name: string;
-  phone?: string;
-  childNames?: string[]; // 연결된 자녀 이름 (쉼표로 구분된 문자열에서 파싱)
-}
-
-const rowToParent = (row: Record<string, unknown>): ImportParentData | null => {
-  const name = String(row['이름'] || '').trim();
-  if (!name) return null;
-
-  // 연결된 자녀 이름 파싱 (쉼표로 구분)
-  const childNamesStr = String(row['연결된자녀'] || '').trim();
-  const childNames = childNamesStr && childNamesStr !== '-'
-    ? childNamesStr.split(',').map(n => n.trim()).filter(n => n)
-    : [];
-
-  return {
-    name,
-    phone: String(row['연락처'] || '').trim() || undefined,
-    childNames: childNames.length > 0 ? childNames : undefined
-  };
-};
-
-// 엑셀 파일에서 학부모 데이터 읽기
-export const readParentsFromExcel = (file: File): Promise<ImportParentData[]> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-
-        console.log('[readParentsFromExcel] 시트 목록:', workbook.SheetNames);
-
-        // '학부모목록' 시트 찾기
-        if (!workbook.SheetNames.includes('학부모목록')) {
-          console.warn('[readParentsFromExcel] "학부모목록" 시트가 없습니다. 시트 목록:', workbook.SheetNames);
-          resolve([]); // 학부모 시트가 없으면 빈 배열 반환
-          return;
-        }
-
-        const worksheet = workbook.Sheets['학부모목록'];
-
-        // 시트를 JSON으로 변환
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
-        console.log('[readParentsFromExcel] 학부모 행 데이터:', rows);
-
-        // 학부모 데이터로 변환
-        const parents: ImportParentData[] = [];
-        for (const row of rows) {
-          console.log('[readParentsFromExcel] 처리 중인 행:', row);
-          const parent = rowToParent(row);
-          console.log('[readParentsFromExcel] 변환 결과:', parent);
-          if (parent) {
-            parents.push(parent);
-          }
-        }
-
-        console.log('[readParentsFromExcel] 최종 학부모 데이터:', parents);
-        resolve(parents);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    reader.onerror = () => {
-      reject(new Error('파일을 읽을 수 없습니다.'));
-    };
-
-    reader.readAsBinaryString(file);
-  });
-};
+// 학부모 데이터는 이제 학생 시트에 포함됨 (보호자이름, 보호자연락처 컬럼)
+// readParentsFromExcel 함수는 더 이상 사용하지 않음

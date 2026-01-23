@@ -47,6 +47,29 @@ export function usePushNotification() {
     };
 
     initPush();
+
+    // 권한 상태 변경 감지 (macOS에서 시스템 설정에서 변경 시)
+    const checkPermission = () => {
+      if ('Notification' in window) {
+        const granted = Notification.permission === 'granted';
+        setState(prev => {
+          if (prev.isPermissionGranted !== granted) {
+            console.log('[usePushNotification] Permission changed:', granted);
+            return { ...prev, isPermissionGranted: granted };
+          }
+          return prev;
+        });
+      }
+    };
+
+    // 2초마다 권한 상태 확인 (최대 30초간)
+    const interval = setInterval(checkPermission, 2000);
+    const timeout = setTimeout(() => clearInterval(interval), 30000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   }, []);
 
   // 사용자 로그인 시 토큰 저장
@@ -103,7 +126,13 @@ export function usePushNotification() {
 
     try {
       const permission = await Notification.requestPermission();
-      const granted = permission === 'granted';
+      console.log('[usePushNotification] Permission result:', permission);
+
+      // macOS에서는 시스템 설정으로 이동할 수 있으므로 실제 권한 상태를 다시 확인
+      const actualPermission = Notification.permission;
+      console.log('[usePushNotification] Actual permission:', actualPermission);
+
+      const granted = actualPermission === 'granted';
       setState(prev => ({ ...prev, isPermissionGranted: granted }));
 
       if (granted && user) {
@@ -114,6 +143,7 @@ export function usePushNotification() {
         const token = await fcmService.saveToken(user.uid, userType);
         if (token) {
           setState(prev => ({ ...prev, isTokenSaved: true }));
+          console.log('[usePushNotification] FCM token saved');
         }
       }
 

@@ -4,9 +4,9 @@ import AdminLayout from '../../components/admin/AdminLayout';
 import { useStore } from '../../store/useStore';
 import { studentService } from '../../services/studentService';
 import { parentService, RelationType } from '../../services/parentService';
-import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup, readStudentsFromExcel, readParentsFromExcel } from '../../utils/excelExport';
-import { demoStudents } from '../../data/demoStudents';
-import { batchCreateStudents, BatchStudentData, batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData, ParentChildMap } from '../../lib/firebase';
+import { exportAllStudents, exportFilteredStudents, exportStudentsByStatus, exportFullBackup, readStudentsFromExcel } from '../../utils/excelExport';
+// readParentsFromExcel은 더 이상 사용하지 않음 - 보호자 정보는 학생 데이터에 포함
+import { batchDeleteStudents, batchRestoreStudents, RestoreStudentData, RestoreParentData, ParentChildMap } from '../../lib/firebase';
 import type { Student, StudentStatus, GradeLevel, Parent } from '../../types';
 
 // 보호자 입력 폼 데이터 타입
@@ -111,16 +111,6 @@ export default function AdminStudents() {
     deletedAuth: number;
   } | null>(null);
 
-  // 데모 데이터 등록 관련 상태
-  const [isDemoLoading, setIsDemoLoading] = useState(false);
-  const [demoProgress, setDemoProgress] = useState<{
-    current: number;
-    total: number;
-    currentName: string;
-    studentsDone: number;
-    parentsDone: number;
-  } | null>(null);
-
   // 엑셀 가져오기 관련 상태
   const [showImportModal, setShowImportModal] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -169,13 +159,20 @@ export default function AdminStudents() {
   const [newStatus, setNewStatus] = useState<StudentStatus>('active');
   const [statusReason, setStatusReason] = useState('');
 
-  // 필터링된 학생 목록
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
-    const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
-    return matchesSearch && matchesStatus && matchesGrade;
-  });
+  // 자연 정렬 함수 (숫자를 자연스럽게 정렬: 1, 2, 10, 11 순서)
+  const naturalSort = (a: string, b: string) => {
+    return a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' });
+  };
+
+  // 필터링된 학생 목록 (자연 정렬 적용)
+  const filteredStudents = students
+    .filter((s) => {
+      const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
+      const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
+      return matchesSearch && matchesStatus && matchesGrade;
+    })
+    .sort((a, b) => naturalSort(a.name, b.name));
 
   // 상태별 카운트
   const statusCounts = {
@@ -189,10 +186,9 @@ export default function AdminStudents() {
     return classes.filter((c) => c.studentIds.includes(studentId));
   };
 
-  // 초대 링크 생성
-  const getInviteLink = (inviteCode: string) => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/invite/${inviteCode}`;
+  // 메인 URL 생성 (초대코드 경로 제거 - 전화번호 인증 방식으로 변경됨)
+  const getMainUrl = () => {
+    return window.location.origin;
   };
 
   // 클립보드 복사
@@ -504,26 +500,33 @@ export default function AdminStudents() {
     setShowImportModal(true);
 
     try {
-      // 학생 데이터 읽기
+      // 학생 데이터만 읽기 (학부모 데이터는 가져오지 않음)
       const studentsData = await readStudentsFromExcel(file);
-      // 학부모 데이터 읽기
-      const parentsData = await readParentsFromExcel(file);
 
       const totalStudents = studentsData.length;
-      const totalParents = parentsData.length;
+
+      // 학생 데이터가 없으면 오류 표시
+      if (totalStudents === 0) {
+        setShowImportModal(false);
+        setImportProgress(null);
+        setIsImporting(false);
+        e.target.value = '';
+        alert('엑셀 파일에서 학생 데이터를 찾을 수 없습니다.\n\n확인사항:\n1. "이름" 컬럼이 있는지 확인하세요\n2. 학생 이름이 입력되어 있는지 확인하세요\n3. 시트 이름이 "학생목록"인지 확인하세요\n\n※ 엑셀 내보내기로 다운로드한 파일 형식을 참고하세요.');
+        return;
+      }
 
       // 진행 상황 업데이트 - 서버로 전송
       setImportProgress({
         phase: 'students',
         current: 0,
-        total: totalStudents + totalParents,
-        currentName: '서버에서 학생/부모 생성 및 연결 중...',
+        total: totalStudents,
+        currentName: '서버에서 학생 생성 중...',
         studentsDone: 0,
         parentsDone: 0,
         linkedCount: 0
       });
 
-      // RestoreStudentData 형식으로 변환
+      // RestoreStudentData 형식으로 변환 (보호자 정보 포함)
       const restoreStudents: RestoreStudentData[] = studentsData.map(s => ({
         name: s.name,
         phone: s.phone || '',
@@ -535,48 +538,41 @@ export default function AdminStudents() {
         notes: s.notes,
         status: s.status,
         inviteCode: s.inviteCode,
-        parentIds: []
+        parentIds: [],
+        // 보호자 정보 (엑셀 학생 데이터에서 읽어온 값)
+        parentName: s.parentName,
+        parentPhone: s.parentPhone
       }));
 
-      // RestoreParentData 형식으로 변환 (고유한 부모만)
-      const uniqueParents = new Map<string, RestoreParentData>();
-      for (const parentData of parentsData) {
-        const key = parentData.phone || parentData.name;
-        if (!uniqueParents.has(key)) {
-          uniqueParents.set(key, {
-            id: key, // 고유 키 사용
-            name: parentData.name,
-            phone: parentData.phone || ''
-          });
-        }
-      }
-      const restoreParents: RestoreParentData[] = Array.from(uniqueParents.values());
+      // 보호자 정보가 있는 학생 수 계산
+      const studentsWithParent = restoreStudents.filter(s => s.parentName || s.parentPhone);
+      console.log('[handleImportExcel] 보호자 정보 있는 학생:', studentsWithParent.length);
 
-      // parentChildMap 생성: { "부모전화번호": ["자녀이름1", "자녀이름2"], ... }
+      // 부모 데이터는 학생 데이터에 포함되어 있음 (parentName, parentPhone)
+      // 서버에서 학생 생성 시 보호자도 함께 생성함
+      const restoreParents: RestoreParentData[] = [];
       const parentChildMap: ParentChildMap = {};
-      for (const parentData of parentsData) {
-        if (parentData.phone && parentData.childNames && parentData.childNames.length > 0) {
-          parentChildMap[parentData.phone] = parentData.childNames;
-        }
-      }
 
-      console.log('[handleImportExcel] parentChildMap:', parentChildMap);
+      console.log('[handleImportExcel] 학생+보호자 정보 복원 (단일 시트)');
 
-      // Cloud Function 호출
+      // Cloud Function 호출 (학생 데이터에 보호자 정보 포함)
       const result = await batchRestoreStudents(restoreStudents, restoreParents, parentChildMap);
+
+      // 보호자 정보가 있는 학생 수 (예상 부모 수)
+      const expectedParents = studentsWithParent.length;
 
       // 완료 상태 표시
       setImportProgress({
         phase: 'done',
-        current: totalStudents + totalParents,
-        total: totalStudents + totalParents,
+        current: totalStudents,
+        total: totalStudents,
         currentName: '모든 처리 완료!',
         studentsDone: result.createdStudents,
         parentsDone: result.createdParents,
         linkedCount: result.linkedParentStudent || 0
       });
 
-      // 결과 설정
+      // 결과 설정 (학생 + 보호자 결과 모두 표시)
       setImportResult({
         students: {
           total: totalStudents,
@@ -587,10 +583,10 @@ export default function AdminStudents() {
           errors: result.errors.filter(e => e.type === 'student').map(e => `${e.name}: ${e.error}`)
         },
         parents: {
-          total: totalParents,
+          total: expectedParents,
           success: result.createdParents,
           linked: result.linkedParentStudent || 0,
-          created: result.createdAuthUsers,
+          created: result.createdParents, // 생성된 부모 Auth 계정
           failed: result.errors.filter(e => e.type === 'parent').length,
           errors: result.errors.filter(e => e.type === 'parent').map(e => `${e.name}: ${e.error}`)
         }
@@ -618,63 +614,6 @@ export default function AdminStudents() {
     setShowImportModal(false);
     setImportProgress(null);
     setImportResult(null);
-  };
-
-  // 데모 데이터 등록 (Cloud Function 사용)
-  const handleLoadDemoData = async () => {
-    if (!confirm('50명의 데모 학생 데이터를 등록하시겠습니까?\n각 학생당 부모 계정도 함께 생성됩니다.\n\n※ 서버에서 처리되므로 약 1-2분 소요됩니다.')) return;
-
-    setIsDemoLoading(true);
-    setDemoProgress({
-      current: 0,
-      total: demoStudents.length,
-      currentName: '서버에서 처리 중...',
-      studentsDone: 0,
-      parentsDone: 0,
-    });
-
-    try {
-      // 데모 데이터를 BatchStudentData 형식으로 변환
-      const batchData: BatchStudentData[] = demoStudents.map(demo => ({
-        name: demo.name,
-        phone: demo.phone,
-        birthDate: demo.birthDate,
-        gender: demo.gender,
-        school: demo.school,
-        grade: demo.grade,
-        address: demo.address,
-        notes: demo.notes,
-        parent: {
-          name: demo.parent.name,
-          phone: demo.parent.phone,
-          relationType: demo.parent.relationType,
-        }
-      }));
-
-      // Cloud Function 호출
-      const result = await batchCreateStudents(batchData);
-
-      setDemoProgress({
-        current: result.totalStudents,
-        total: result.totalStudents,
-        currentName: '완료!',
-        studentsDone: result.createdStudents,
-        parentsDone: result.createdParents,
-      });
-
-      if (result.errors.length > 0) {
-        console.warn('Batch create errors:', result.errors);
-        alert(`데모 데이터 등록 완료! (일부 오류 발생)\n학생: ${result.createdStudents}명\n부모: ${result.createdParents}명\n오류: ${result.errors.length}건`);
-      } else {
-        alert(`데모 데이터 등록 완료!\n학생: ${result.createdStudents}명\n부모: ${result.createdParents}명`);
-      }
-    } catch (error) {
-      console.error('Error loading demo data:', error);
-      alert('데모 데이터 등록 중 오류가 발생했습니다.');
-    } finally {
-      setIsDemoLoading(false);
-      setDemoProgress(null);
-    }
   };
 
   return (
@@ -734,7 +673,7 @@ export default function AdminStudents() {
             </button>
             <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
               <button
-                onClick={() => exportAllStudents(students, classes)}
+                onClick={() => exportAllStudents(students, classes, parents)}
                 className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg flex items-center gap-2"
               >
                 <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -743,7 +682,7 @@ export default function AdminStudents() {
                 전체 학생 ({students.length}명)
               </button>
               <button
-                onClick={() => exportFilteredStudents(filteredStudents, classes, statusFilter !== 'all' ? STATUS_LABELS[statusFilter] : undefined)}
+                onClick={() => exportFilteredStudents(filteredStudents, classes, statusFilter !== 'all' ? STATUS_LABELS[statusFilter] : undefined, parents)}
                 className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
               >
                 <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -753,21 +692,21 @@ export default function AdminStudents() {
               </button>
               <div className="border-t border-gray-100">
                 <button
-                  onClick={() => exportStudentsByStatus(students, classes, 'active')}
+                  onClick={() => exportStudentsByStatus(students, classes, 'active', parents)}
                   className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
                   <span className="w-2 h-2 rounded-full bg-green-500" />
                   재원 학생 ({statusCounts.active}명)
                 </button>
                 <button
-                  onClick={() => exportStudentsByStatus(students, classes, 'inactive')}
+                  onClick={() => exportStudentsByStatus(students, classes, 'inactive', parents)}
                   className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
                   <span className="w-2 h-2 rounded-full bg-yellow-500" />
                   휴원 학생 ({statusCounts.inactive}명)
                 </button>
                 <button
-                  onClick={() => exportStudentsByStatus(students, classes, 'withdrawn')}
+                  onClick={() => exportStudentsByStatus(students, classes, 'withdrawn', parents)}
                   className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
                   <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -801,18 +740,6 @@ export default function AdminStudents() {
                     disabled={isImporting}
                   />
                 </label>
-              </div>
-              <div className="border-t border-gray-100">
-                <button
-                  onClick={handleLoadDemoData}
-                  disabled={isDemoLoading}
-                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2 disabled:opacity-50"
-                >
-                  <svg className="w-4 h-4 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  {isDemoLoading ? '등록 중...' : '데모 데이터 50명 등록'}
-                </button>
               </div>
             </div>
           </div>
@@ -1343,43 +1270,23 @@ export default function AdminStudents() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowInviteModal(false)} />
           <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-2">초대 링크</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">접속 링크</h2>
             <p className="text-gray-500 mb-6">
-              <span className="font-semibold text-gray-900">{selectedStudent.name}</span> 학생의 초대 정보입니다.
+              <span className="font-semibold text-gray-900">{selectedStudent.name}</span> 학생의 접속 정보입니다.
             </p>
 
-            {/* 초대 코드 */}
-            <div className="mb-4">
-              <label className="text-sm text-gray-500 mb-2 block">초대 코드</label>
-              <div className="flex gap-2">
-                <div className="flex-1 px-4 py-3 bg-gray-100 rounded-lg font-mono text-lg text-center">
-                  {selectedStudent.inviteCode}
-                </div>
-                <button
-                  onClick={() => copyToClipboard(selectedStudent.inviteCode, 'code')}
-                  className={`px-4 py-2 rounded-lg transition-colors ${
-                    copiedCode === 'code'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {copiedCode === 'code' ? '복사됨!' : '복사'}
-                </button>
-              </div>
-            </div>
-
-            {/* 초대 링크 */}
+            {/* 접속 링크 */}
             <div className="mb-6">
-              <label className="text-sm text-gray-500 mb-2 block">초대 링크</label>
+              <label className="text-sm text-gray-500 mb-2 block">접속 링크</label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   readOnly
-                  value={getInviteLink(selectedStudent.inviteCode)}
+                  value={getMainUrl()}
                   className="flex-1 px-4 py-3 bg-gray-100 rounded-lg text-sm text-gray-600 truncate"
                 />
                 <button
-                  onClick={() => copyToClipboard(getInviteLink(selectedStudent.inviteCode), 'link')}
+                  onClick={() => copyToClipboard(getMainUrl(), 'link')}
                   className={`px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${
                     copiedCode === 'link'
                       ? 'bg-green-500 text-white'
@@ -1423,7 +1330,7 @@ export default function AdminStudents() {
             {/* 안내 */}
             <div className="bg-blue-50 rounded-xl p-4 mb-6">
               <p className="text-sm text-blue-700">
-                이 링크를 학생 또는 학부모에게 전달하세요. 링크를 통해 회원가입하면 자동으로 연결됩니다.
+                이 링크를 학생 또는 학부모에게 전달하세요. 등록된 전화번호로 로그인하면 자동으로 연결됩니다.
               </p>
             </div>
 
@@ -1765,65 +1672,6 @@ export default function AdminStudents() {
                   <p className="text-green-700 font-medium">삭제 완료!</p>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 데모 데이터 등록 진행 모달 */}
-      {isDemoLoading && demoProgress && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" />
-          <div className="relative w-full max-w-md bg-white rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-2">데모 데이터 등록 중...</h2>
-            <p className="text-gray-500 mb-6">
-              잠시만 기다려주세요. 창을 닫지 마세요.
-            </p>
-
-            <div className="space-y-4">
-              {/* 진행률 바 */}
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600">
-                    학생 등록 중 ({demoProgress.current}/{demoProgress.total})
-                  </span>
-                  <span className="text-gray-500">
-                    {Math.round((demoProgress.current / demoProgress.total) * 100)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3">
-                  <div
-                    className="bg-pink-500 h-3 rounded-full transition-all duration-300"
-                    style={{ width: `${(demoProgress.current / demoProgress.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* 현재 처리 중인 항목 */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">현재 처리 중:</p>
-                <p className="font-medium text-gray-900 truncate">{demoProgress.currentName}</p>
-              </div>
-
-              {/* 완료된 수 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-pink-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-pink-600">{demoProgress.studentsDone}</p>
-                  <p className="text-xs text-gray-500">학생 완료</p>
-                </div>
-                <div className="bg-purple-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-purple-600">{demoProgress.parentsDone}</p>
-                  <p className="text-xs text-gray-500">부모 완료</p>
-                </div>
-              </div>
-
-              {/* 로딩 애니메이션 */}
-              <div className="flex justify-center">
-                <svg className="animate-spin h-8 w-8 text-pink-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "checkmate-attend-check",
+    "site": "aniwid-attend-check",
     "public": "dist",
     "ignore": [
       "firebase.json",

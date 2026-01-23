@@ -76,6 +76,7 @@ export default function StudentDetail() {
   const [learningSubTab, setLearningSubTab] = useState<'homework' | 'score' | 'progress'>('homework');
   const [allAttendances, setAllAttendances] = useState<Attendance[]>([]);
   const [parents, setParents] = useState<Parent[]>([]);
+  const [deletingParentId, setDeletingParentId] = useState<string | null>(null);
 
   // 학생 데이터 로드
   useEffect(() => {
@@ -185,6 +186,37 @@ export default function StudentDetail() {
       alert('상태 변경 중 오류가 발생했습니다.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 부모 삭제
+  const handleDeleteParent = async (parent: Parent) => {
+    if (!student) return;
+
+    const confirmMsg = parent.userId
+      ? `"${parent.name}" 보호자를 삭제하시겠습니까?\n\n⚠️ 앱 계정도 함께 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.`
+      : `"${parent.name}" 보호자를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setDeletingParentId(parent.id);
+    try {
+      // 1. 학생의 parentIds에서 제거
+      const updatedParentIds = (student.parentIds || []).filter(pid => pid !== parent.id);
+      await studentService.update(student.id, { parentIds: updatedParentIds });
+
+      // 2. 부모 문서 및 Auth 삭제
+      await parentService.delete(parent.id);
+
+      // 3. 로컬 상태 업데이트
+      setParents(prev => prev.filter(p => p.id !== parent.id));
+
+      alert('보호자가 삭제되었습니다.');
+    } catch (error) {
+      console.error('Error deleting parent:', error);
+      alert('보호자 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setDeletingParentId(null);
     }
   };
 
@@ -470,18 +502,36 @@ export default function StudentDetail() {
               {parents.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {parents.map((parent) => (
-                    <div key={parent.id} className="p-4 bg-purple-50 rounded-xl border border-purple-100">
+                    <div key={parent.id} className="p-4 bg-purple-50 rounded-xl border border-purple-100 relative group">
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
                           <span className="text-purple-700 font-bold">{parent.name.charAt(0)}</span>
                         </div>
-                        <div>
+                        <div className="flex-1">
                           <p className="font-medium text-gray-900">{parent.name}</p>
                           <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
                             {parent.relationType === 'father' ? '아버지' :
                              parent.relationType === 'mother' ? '어머니' : '보호자'}
                           </span>
                         </div>
+                        {/* 삭제 버튼 */}
+                        <button
+                          onClick={() => handleDeleteParent(parent)}
+                          disabled={deletingParentId === parent.id}
+                          className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
+                          title="보호자 삭제"
+                        >
+                          {deletingParentId === parent.id ? (
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          )}
+                        </button>
                       </div>
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 text-sm">

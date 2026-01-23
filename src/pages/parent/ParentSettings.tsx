@@ -1,15 +1,24 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ParentLayout } from '../../components/parent/ParentLayout';
 import { useAuth } from '../../contexts/AuthContext';
+import { useServiceWorker } from '../../hooks/useServiceWorker';
 import { APP_VERSION } from '../../config/version';
 
 export default function ParentSettings() {
   const { parentData, logout } = useAuth();
   const navigate = useNavigate();
+  const [isUpdating, setIsUpdating] = useState(false);
+  const { forceUpdate } = useServiceWorker();
 
   const handleLogout = async () => {
     await logout();
     navigate('/parent/login');
+  };
+
+  const handleUpdate = async () => {
+    setIsUpdating(true);
+    await forceUpdate();
   };
 
   return (
@@ -61,6 +70,30 @@ export default function ParentSettings() {
                 </svg>
               </div>
               <span className="text-gray-900 font-medium">도움말</span>
+            </div>
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <button
+            onClick={handleUpdate}
+            disabled={isUpdating}
+            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                {isUpdating ? (
+                  <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+              </div>
+              <span className="text-gray-900 font-medium">
+                {isUpdating ? '업데이트 중...' : '앱 업데이트'}
+              </span>
             </div>
             <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

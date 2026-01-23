@@ -106,7 +106,12 @@ export default function QRCheckin() {
           try {
             // 해당 학생의 부모들 조회
             const parents = await parentService.getParentsByStudentId(selectedStudent);
-            const parentUserIds = parents.map(p => p.userId);
+            // userId가 있는 부모만 필터링 (계정이 활성화된 부모만)
+            const parentUserIds = parents
+              .filter(p => p.userId)
+              .map(p => p.userId) as string[];
+
+            console.log('[QRCheckin] Parents found:', parents.length, 'with userId:', parentUserIds.length);
 
             if (parentUserIds.length > 0) {
               // 부모들에게 체크인 알림 생성
@@ -117,6 +122,7 @@ export default function QRCheckin() {
                 attendanceStatus as 'present' | 'late',
                 checkInTime
               );
+              console.log('[QRCheckin] Notification sent to parents');
             }
           } catch (error) {
             console.error('Failed to notify parents:', error);

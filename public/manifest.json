@@ -1,6 +1,6 @@
 {
-  "name": "ANI CHECK",
-  "short_name": "ANI CHECK",
+  "name": "CheckMate",
+  "short_name": "CheckMate",
   "description": "스마트 출결 관리 시스템",
   "start_url": "/",
   "display": "standalone",

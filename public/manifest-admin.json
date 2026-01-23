@@ -1,7 +1,7 @@
 {
-  "name": "ANI CHECK 관리자",
-  "short_name": "ANI 관리자",
-  "description": "ANI CHECK 관리자용 앱",
+  "name": "CheckMate 관리자",
+  "short_name": "CM 관리자",
+  "description": "CheckMate 관리자용 앱",
   "start_url": "/admin",
   "display": "standalone",
   "background_color": "#1E3A5F",
