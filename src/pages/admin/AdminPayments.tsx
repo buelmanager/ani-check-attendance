@@ -132,8 +132,7 @@ export default function AdminPayments() {
     targetMonth: `${new Date().getFullYear()}-${String(currentMonth).padStart(2, '0')}`,
     description: '',
     dueDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 10).toISOString().split('T')[0],
-    sendPush: true,
-    selectedStudentIds: [] as string[]  // 개별 학생 선택용
+    sendPush: true
   });
 
   // 학생별 푸시 알림 모달 상태
@@ -708,13 +707,10 @@ export default function AdminPayments() {
     }
   };
 
-  // 일괄 청구 시 선택된 학생들
+  // 일괄 청구 시 선택된 학생들 (클래스 전체 학생)
   const bulkSelectedStudents = useMemo(() => {
-    if (bulkCreateForm.selectedStudentIds.length > 0) {
-      return activeStudents.filter(s => bulkCreateForm.selectedStudentIds.includes(s.id));
-    }
     return getStudentsByClass(bulkCreateForm.classId);
-  }, [bulkCreateForm.selectedStudentIds, bulkCreateForm.classId, activeStudents]);
+  }, [bulkCreateForm.classId, activeStudents]);
 
   // 학원비 카테고리일 때 클래스 선택 시 수업료 자동 적용
   const handleBulkClassChange = (classId: string) => {
@@ -722,8 +718,7 @@ export default function AdminPayments() {
     setBulkCreateForm(prev => ({
       ...prev,
       classId,
-      amount: fee ? fee.monthlyFee : prev.amount,
-      selectedStudentIds: []  // 클래스 변경 시 개별 선택 초기화
+      amount: fee ? fee.monthlyFee : prev.amount
     }));
   };
 
@@ -1534,51 +1529,6 @@ export default function AdminPayments() {
                 </label>
               </div>
 
-              {/* 학생 개별 선택 (선택 사항) */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">학생 개별 선택 (선택 사항)</label>
-                  {bulkCreateForm.selectedStudentIds.length > 0 && (
-                    <button
-                      onClick={() => setBulkCreateForm({ ...bulkCreateForm, selectedStudentIds: [] })}
-                      className="text-xs text-gray-500 hover:text-gray-700"
-                    >
-                      선택 해제
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-xl p-2">
-                  {getStudentsByClass(bulkCreateForm.classId).map((student) => (
-                    <label key={student.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 rounded-lg cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={bulkCreateForm.selectedStudentIds.includes(student.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setBulkCreateForm({
-                              ...bulkCreateForm,
-                              selectedStudentIds: [...bulkCreateForm.selectedStudentIds, student.id]
-                            });
-                          } else {
-                            setBulkCreateForm({
-                              ...bulkCreateForm,
-                              selectedStudentIds: bulkCreateForm.selectedStudentIds.filter(id => id !== student.id)
-                            });
-                          }
-                        }}
-                        className="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
-                      />
-                      <span className="text-sm text-gray-700">{student.name}</span>
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  {bulkCreateForm.selectedStudentIds.length > 0
-                    ? `${bulkCreateForm.selectedStudentIds.length}명 선택됨`
-                    : `전체 ${getStudentsByClass(bulkCreateForm.classId).length}명에게 청구됩니다 (개별 선택하지 않으면 전체)`}
-                </p>
-              </div>
-
               {/* 미리보기 */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <div className="text-sm text-gray-500 mb-2">생성될 청구서</div>
@@ -1615,8 +1565,7 @@ export default function AdminPayments() {
                     targetMonth: `${nowYear}-${String(nowMonth).padStart(2, '0')}`,
                     description: '',
                     dueDate: new Date(nowYear, new Date().getMonth() + 1, 10).toISOString().split('T')[0],
-                    sendPush: true,
-                    selectedStudentIds: []
+                    sendPush: true
                   });
                 }}
                 disabled={isBulkCreating}
