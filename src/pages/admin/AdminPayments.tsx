@@ -313,6 +313,7 @@ export default function AdminPayments() {
           const parents = await parentService.getParentsByStudentId(createForm.studentId);
           const parentUserIds = parents.map(p => p.userId).filter(Boolean) as string[];
           if (parentUserIds.length > 0) {
+            // 학부모가 있으면 학부모에게 알림
             await notificationService.notifyParentsOfPayment(
               parentUserIds,
               student.name,
@@ -320,6 +321,15 @@ export default function AdminPayments() {
               amount,
               createForm.dueDate
             );
+          } else if (student.userId) {
+            // 학부모가 없으면 학생에게 직접 알림
+            await notificationService.create({
+              userId: student.userId,
+              type: 'announcement',
+              title: '수업료 청구서 안내',
+              message: `${finalDescription}\n청구금액: ${amount.toLocaleString()}원\n납부기한: ${createForm.dueDate}`,
+              isRead: false
+            });
           }
         } catch (pushError) {
           console.error('Push notification error:', pushError);
@@ -398,10 +408,17 @@ export default function AdminPayments() {
             dueDate: string;
           }> = [];
 
+          // 학부모가 없는 학생들에게 직접 보낼 알림
+          const studentDirectNotifications: Array<{
+            studentUserId: string;
+            studentName: string;
+          }> = [];
+
           for (const student of targetStudents) {
             const parents = await parentService.getParentsByStudentId(student.id);
             const parentUserIds = parents.map(p => p.userId).filter(Boolean) as string[];
             if (parentUserIds.length > 0) {
+              // 학부모가 있으면 학부모에게 알림
               notifications.push({
                 parentUserIds,
                 studentName: student.name,
@@ -409,11 +426,28 @@ export default function AdminPayments() {
                 amount,
                 dueDate: bulkCreateForm.dueDate
               });
+            } else if (student.userId) {
+              // 학부모가 없으면 학생에게 직접 알림
+              studentDirectNotifications.push({
+                studentUserId: student.userId,
+                studentName: student.name
+              });
             }
           }
 
           if (notifications.length > 0) {
             await notificationService.notifyBulkPayments(notifications);
+          }
+
+          // 학부모 없는 학생들에게 직접 알림 전송
+          for (const item of studentDirectNotifications) {
+            await notificationService.create({
+              userId: item.studentUserId,
+              type: 'announcement',
+              title: '수업료 청구서 안내',
+              message: `${finalDescription}\n청구금액: ${amount.toLocaleString()}원\n납부기한: ${bulkCreateForm.dueDate}`,
+              isRead: false
+            });
           }
         } catch (pushError) {
           console.error('Push notification error:', pushError);
