@@ -68,7 +68,7 @@ export default function AdminPayments() {
 
   // 납부 관련 상태
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [statusFilter, setStatusFilter] = useState<PaymentStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<PaymentStatus | 'all' | 'confirmation'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set());
 
@@ -196,7 +196,16 @@ export default function AdminPayments() {
   // 필터링된 납부 목록
   const filteredPayments = useMemo(() => {
     return payments.filter(p => {
-      const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+      // 상태 필터 (confirmation은 confirmationRequested가 true인 항목)
+      let matchesStatus = false;
+      if (statusFilter === 'all') {
+        matchesStatus = true;
+      } else if (statusFilter === 'confirmation') {
+        matchesStatus = p.confirmationRequested === true;
+      } else {
+        matchesStatus = p.status === statusFilter;
+      }
+
       const matchesSearch =
         p.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -226,7 +235,8 @@ export default function AdminPayments() {
     pending: payments.filter(p => p.status === 'pending').length,
     paid: payments.filter(p => p.status === 'paid').length,
     partial: payments.filter(p => p.status === 'partial').length,
-    overdue: payments.filter(p => p.status === 'overdue').length
+    overdue: payments.filter(p => p.status === 'overdue').length,
+    confirmation: payments.filter(p => p.confirmationRequested === true).length
   }), [payments]);
 
   // 통계 계산 (필터된 데이터 기준)
@@ -878,6 +888,20 @@ export default function AdminPayments() {
                     </span>
                   </button>
                 ))}
+                {/* 납부확인요청 필터 */}
+                <button
+                  onClick={() => setStatusFilter('confirmation')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'confirmation'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                  }`}
+                >
+                  확인요청
+                  <span className="ml-1.5 text-xs">
+                    ({statusCounts.confirmation})
+                  </span>
+                </button>
               </div>
 
               {/* 검색 */}
