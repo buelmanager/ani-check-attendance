@@ -516,10 +516,11 @@ export default function AdminPayments() {
     setIsSubmitting(true);
     try {
       // 완납으로 변경 시 확인요청 표시도 함께 제거
-      const updateData: Partial<Payment> = { status: newStatus };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updateData: any = { status: newStatus };
       if (newStatus === 'paid') {
         updateData.confirmationRequested = false;
-        updateData.confirmationRequestedAt = undefined;
+        updateData.confirmationRequestedAt = null;
         // 완납 시 납부금액도 전액으로 설정
         updateData.paidAmount = selectedPayment.amount;
         updateData.paidAt = new Date().toISOString();
