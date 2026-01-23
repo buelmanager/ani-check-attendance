@@ -132,8 +132,15 @@ export default function AdminPayments() {
     targetMonth: `${new Date().getFullYear()}-${String(currentMonth).padStart(2, '0')}`,
     description: '',
     dueDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 10).toISOString().split('T')[0],
-    sendPush: true
+    sendPush: true,
+    selectedStudentIds: [] as string[]  // 개별 학생 선택용
   });
+
+  // 학생별 푸시 알림 모달 상태
+  const [showPushModal, setShowPushModal] = useState(false);
+  const [pushSelectedStudents, setPushSelectedStudents] = useState<Set<string>>(new Set());
+  const [pushMessage, setPushMessage] = useState({ title: '', message: '' });
+  const [isSendingPush, setIsSendingPush] = useState(false);
 
   // 납부 처리 폼
   const [paymentForm, setPaymentForm] = useState({
@@ -336,7 +343,8 @@ export default function AdminPayments() {
       return;
     }
 
-    const targetStudents = getStudentsByClass(bulkCreateForm.classId);
+    // 개별 선택된 학생이 있으면 그 학생들만, 없으면 클래스 전체 학생
+    const targetStudents = bulkSelectedStudents;
     if (targetStudents.length === 0) {
       alert('대상 학생이 없습니다.');
       return;
@@ -578,6 +586,72 @@ export default function AdminPayments() {
     }
   };
 
+  // 학생별 푸시 알림 전송
+  const handleSendPushToStudents = async () => {
+    if (pushSelectedStudents.size === 0) {
+      alert('알림을 보낼 학생을 선택해주세요.');
+      return;
+    }
+    if (!pushMessage.title.trim() || !pushMessage.message.trim()) {
+      alert('제목과 메시지를 입력해주세요.');
+      return;
+    }
+
+    setIsSendingPush(true);
+    try {
+      let sentCount = 0;
+      for (const studentId of pushSelectedStudents) {
+        const student = students.find(s => s.id === studentId);
+        if (!student) continue;
+
+        const parents = await parentService.getParentsByStudentId(studentId);
+        const parentUserIds = parents.map(p => p.userId).filter(Boolean) as string[];
+
+        if (parentUserIds.length > 0) {
+          for (const userId of parentUserIds) {
+            await notificationService.create({
+              userId,
+              type: 'announcement',
+              title: pushMessage.title,
+              message: `[${student.name}] ${pushMessage.message}`,
+              isRead: false
+            });
+          }
+          sentCount++;
+        }
+      }
+
+      alert(`${sentCount}명의 학부모에게 알림이 전송되었습니다.`);
+      setShowPushModal(false);
+      setPushSelectedStudents(new Set());
+      setPushMessage({ title: '', message: '' });
+    } catch (error) {
+      console.error('Error sending push:', error);
+      alert('알림 전송 중 오류가 발생했습니다.');
+    } finally {
+      setIsSendingPush(false);
+    }
+  };
+
+  // 일괄 청구 시 선택된 학생들
+  const bulkSelectedStudents = useMemo(() => {
+    if (bulkCreateForm.selectedStudentIds.length > 0) {
+      return activeStudents.filter(s => bulkCreateForm.selectedStudentIds.includes(s.id));
+    }
+    return getStudentsByClass(bulkCreateForm.classId);
+  }, [bulkCreateForm.selectedStudentIds, bulkCreateForm.classId, activeStudents]);
+
+  // 학원비 카테고리일 때 클래스 선택 시 수업료 자동 적용
+  const handleBulkClassChange = (classId: string) => {
+    const fee = classId !== 'all' ? classFees.find(f => f.classId === classId) : null;
+    setBulkCreateForm(prev => ({
+      ...prev,
+      classId,
+      amount: fee ? fee.monthlyFee : prev.amount,
+      selectedStudentIds: []  // 클래스 변경 시 개별 선택 초기화
+    }));
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -718,6 +792,15 @@ export default function AdminPayments() {
                   선택 삭제 ({selectedPayments.size})
                 </button>
               )}
+              <button
+                onClick={() => setShowPushModal(true)}
+                className="btn-outline flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                학부모 알림 전송
+              </button>
             </div>
 
             {/* 필터 */}
@@ -1211,32 +1294,6 @@ export default function AdminPayments() {
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">대상 클래스</label>
-                <select
-                  value={bulkCreateForm.classId}
-                  onChange={(e) => {
-                    const classId = e.target.value;
-                    setBulkCreateForm({ ...bulkCreateForm, classId });
-                    // 클래스별 수업료 자동 적용
-                    if (classId !== 'all') {
-                      const fee = classFees.find(f => f.classId === classId);
-                      if (fee) {
-                        setBulkCreateForm(prev => ({ ...prev, classId, amount: fee.monthlyFee }));
-                      }
-                    }
-                  }}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent/20 focus:border-accent"
-                >
-                  <option value="all">전체 학생 ({activeStudents.length}명)</option>
-                  {classes.map((cls) => (
-                    <option key={cls.id} value={cls.id}>
-                      {cls.name} ({cls.studentIds.filter(id => activeStudents.some(s => s.id === id)).length}명)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
                 <div className="flex gap-2">
                   <button
@@ -1265,8 +1322,29 @@ export default function AdminPayments() {
               </div>
 
               {bulkCreateForm.category === 'tuition' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">대상 월</label>
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">클래스 선택</label>
+                    <select
+                      value={bulkCreateForm.classId}
+                      onChange={(e) => handleBulkClassChange(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                    >
+                      <option value="all">전체 학생 ({activeStudents.length}명)</option>
+                      {classes.map((cls) => {
+                        const fee = classFees.find(f => f.classId === cls.id);
+                        const studentCount = cls.studentIds.filter(id => activeStudents.some(s => s.id === id)).length;
+                        return (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.name} ({studentCount}명) {fee ? `- ${formatCurrency(fee.monthlyFee)}` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">대상 월</label>
                   <div className="flex gap-2">
                     <select
                       value={bulkFormYear}
@@ -1292,6 +1370,28 @@ export default function AdminPayments() {
                       ))}
                     </select>
                   </div>
+                  </div>
+                </>
+              )}
+
+              {bulkCreateForm.category === 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">대상 클래스</label>
+                  <select
+                    value={bulkCreateForm.classId}
+                    onChange={(e) => handleBulkClassChange(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                  >
+                    <option value="all">전체 학생 ({activeStudents.length}명)</option>
+                    {classes.map((cls) => {
+                      const studentCount = cls.studentIds.filter(id => activeStudents.some(s => s.id === id)).length;
+                      return (
+                        <option key={cls.id} value={cls.id}>
+                          {cls.name} ({studentCount}명)
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
               )}
 
@@ -1345,6 +1445,51 @@ export default function AdminPayments() {
                 </label>
               </div>
 
+              {/* 학생 개별 선택 (선택 사항) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">학생 개별 선택 (선택 사항)</label>
+                  {bulkCreateForm.selectedStudentIds.length > 0 && (
+                    <button
+                      onClick={() => setBulkCreateForm({ ...bulkCreateForm, selectedStudentIds: [] })}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      선택 해제
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-xl p-2">
+                  {getStudentsByClass(bulkCreateForm.classId).map((student) => (
+                    <label key={student.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bulkCreateForm.selectedStudentIds.includes(student.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setBulkCreateForm({
+                              ...bulkCreateForm,
+                              selectedStudentIds: [...bulkCreateForm.selectedStudentIds, student.id]
+                            });
+                          } else {
+                            setBulkCreateForm({
+                              ...bulkCreateForm,
+                              selectedStudentIds: bulkCreateForm.selectedStudentIds.filter(id => id !== student.id)
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                      />
+                      <span className="text-sm text-gray-700">{student.name}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {bulkCreateForm.selectedStudentIds.length > 0
+                    ? `${bulkCreateForm.selectedStudentIds.length}명 선택됨`
+                    : `전체 ${getStudentsByClass(bulkCreateForm.classId).length}명에게 청구됩니다 (개별 선택하지 않으면 전체)`}
+                </p>
+              </div>
+
               {/* 미리보기 */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <div className="text-sm text-gray-500 mb-2">생성될 청구서</div>
@@ -1352,10 +1497,10 @@ export default function AdminPayments() {
                   {generateDescription(bulkCreateForm.category, bulkCreateForm.targetMonth, bulkCreateForm.description) || '(설명 없음)'}
                 </div>
                 <div className="text-lg font-bold text-gray-900">
-                  {getStudentsByClass(bulkCreateForm.classId).length}명 × {formatCurrency(typeof bulkCreateForm.amount === 'string' ? parseInt(bulkCreateForm.amount) || 0 : bulkCreateForm.amount)}
+                  {bulkSelectedStudents.length}명 × {formatCurrency(typeof bulkCreateForm.amount === 'string' ? parseInt(bulkCreateForm.amount) || 0 : bulkCreateForm.amount)}
                 </div>
                 <div className="text-sm text-gray-600">
-                  = {formatCurrency(getStudentsByClass(bulkCreateForm.classId).length * (typeof bulkCreateForm.amount === 'string' ? parseInt(bulkCreateForm.amount) || 0 : bulkCreateForm.amount))}
+                  = {formatCurrency(bulkSelectedStudents.length * (typeof bulkCreateForm.amount === 'string' ? parseInt(bulkCreateForm.amount) || 0 : bulkCreateForm.amount))}
                 </div>
                 {bulkCreateForm.sendPush && (
                   <div className="text-sm text-accent mt-2 flex items-center gap-1">
@@ -1381,7 +1526,8 @@ export default function AdminPayments() {
                     targetMonth: `${nowYear}-${String(nowMonth).padStart(2, '0')}`,
                     description: '',
                     dueDate: new Date(nowYear, new Date().getMonth() + 1, 10).toISOString().split('T')[0],
-                    sendPush: true
+                    sendPush: true,
+                    selectedStudentIds: []
                   });
                 }}
                 disabled={isBulkCreating}
@@ -1474,6 +1620,133 @@ export default function AdminPayments() {
                 className="flex-1 btn-primary"
               >
                 {isSubmitting ? '처리 중...' : '납부 처리'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 학부모 알림 전송 모달 */}
+      {showPushModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">학부모 알림 전송</h3>
+              <p className="text-sm text-gray-500 mt-1">선택한 학생의 학부모에게 알림을 전송합니다</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">알림 제목</label>
+                <input
+                  type="text"
+                  value={pushMessage.title}
+                  onChange={(e) => setPushMessage({ ...pushMessage, title: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                  placeholder="예: 수업료 안내"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">알림 내용</label>
+                <textarea
+                  value={pushMessage.message}
+                  onChange={(e) => setPushMessage({ ...pushMessage, message: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                  rows={3}
+                  placeholder="예: 이번 달 수업료 납부 부탁드립니다."
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    학생 선택 ({pushSelectedStudents.size}명 선택됨)
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setPushSelectedStudents(new Set(activeStudents.map(s => s.id)))}
+                      className="text-xs text-accent hover:text-accent/80"
+                    >
+                      전체 선택
+                    </button>
+                    <button
+                      onClick={() => setPushSelectedStudents(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      전체 해제
+                    </button>
+                  </div>
+                </div>
+
+                {/* 클래스별 선택 */}
+                <div className="mb-2">
+                  <select
+                    onChange={(e) => {
+                      const classId = e.target.value;
+                      if (classId === 'all') {
+                        setPushSelectedStudents(new Set(activeStudents.map(s => s.id)));
+                      } else if (classId) {
+                        const cls = classes.find(c => c.id === classId);
+                        if (cls) {
+                          const classStudentIds = activeStudents
+                            .filter(s => cls.studentIds.includes(s.id))
+                            .map(s => s.id);
+                          setPushSelectedStudents(new Set([...pushSelectedStudents, ...classStudentIds]));
+                        }
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                  >
+                    <option value="">클래스로 선택 추가...</option>
+                    <option value="all">전체 학생</option>
+                    {classes.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.name} ({cls.studentIds.filter(id => activeStudents.some(s => s.id === id)).length}명)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-2">
+                  {activeStudents.map((student) => (
+                    <label key={student.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={pushSelectedStudents.has(student.id)}
+                        onChange={(e) => {
+                          const newSet = new Set(pushSelectedStudents);
+                          if (e.target.checked) {
+                            newSet.add(student.id);
+                          } else {
+                            newSet.delete(student.id);
+                          }
+                          setPushSelectedStudents(newSet);
+                        }}
+                        className="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                      />
+                      <span className="text-sm text-gray-700">{student.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowPushModal(false);
+                  setPushSelectedStudents(new Set());
+                  setPushMessage({ title: '', message: '' });
+                }}
+                disabled={isSendingPush}
+                className="flex-1 btn-outline"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSendPushToStudents}
+                disabled={isSendingPush || pushSelectedStudents.size === 0}
+                className="flex-1 btn-primary"
+              >
+                {isSendingPush ? '전송 중...' : `${pushSelectedStudents.size}명에게 전송`}
               </button>
             </div>
           </div>
