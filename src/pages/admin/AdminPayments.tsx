@@ -515,7 +515,16 @@ export default function AdminPayments() {
 
     setIsSubmitting(true);
     try {
-      await paymentService.update(selectedPayment.id, { status: newStatus });
+      // 완납으로 변경 시 확인요청 표시도 함께 제거
+      const updateData: Partial<Payment> = { status: newStatus };
+      if (newStatus === 'paid') {
+        updateData.confirmationRequested = false;
+        updateData.confirmationRequestedAt = undefined;
+        // 완납 시 납부금액도 전액으로 설정
+        updateData.paidAmount = selectedPayment.amount;
+        updateData.paidAt = new Date().toISOString();
+      }
+      await paymentService.update(selectedPayment.id, updateData);
       setShowStatusModal(false);
       setSelectedPayment(null);
     } catch (error) {
